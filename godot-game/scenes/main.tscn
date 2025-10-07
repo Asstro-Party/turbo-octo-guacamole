@@ -1,0 +1,73 @@
+[gd_scene load_steps=4 format=3 uid="uid://bx4v3vf5w1h1u"]
+
+[ext_resource type="Script" uid="uid://1m4cb6f55a0t" path="res://scripts/GameManager.gd" id="1_sugp2"]
+[ext_resource type="PackedScene" uid="uid://bgderjbosrs3f" path="res://scenes/player.tscn" id="2_jyhfs"]
+[ext_resource type="Script" uid="uid://cmua45rpdr86x" path="res://scripts/NetworkManager.gd" id="3_tbgi4"]
+
+[node name="Main" type="Node2D"]
+
+[node name="ColorRect" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 1280.0
+offset_bottom = 720.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.039215688, 0.039215688, 0.101960786, 1)
+
+[node name="Arena" type="Node2D" parent="."]
+
+[node name="GameManager" type="Node" parent="."]
+script = ExtResource("1_sugp2")
+player_scene = ExtResource("2_jyhfs")
+
+[node name="Players" type="Node2D" parent="GameManager"]
+
+[node name="NetworkManager" type="Node" parent="GameManager"]
+script = ExtResource("3_tbgi4")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="Control" type="Control" parent="CanvasLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HealthBar" type="ProgressBar" parent="CanvasLayer/Control"]
+layout_mode = 1
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 220.0
+offset_bottom = 50.0
+
+[node name="KillsLabel" type="Label" parent="CanvasLayer/Control"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 60.0
+offset_right = 60.0
+offset_bottom = 83.0
+text = "Kills: 0"
+
+[node name="DeathsLabel" type="Label" parent="CanvasLayer/Control"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 90.0
+offset_right = 60.0
+offset_bottom = 113.0
+text = "Deaths: 0"
+
+[node name="StatusLabel" type="Label" parent="CanvasLayer/Control"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -1430.0
+offset_top = 20.0
+offset_right = -1329.0
+offset_bottom = 43.0
+grow_horizontal = 0
+text = "Connecting..."

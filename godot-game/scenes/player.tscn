@@ -1,0 +1,21 @@
+[gd_scene load_steps=4 format=3 uid="uid://bgderjbosrs3f"]
+
+[ext_resource type="Script" uid="uid://cvs8wsoyv0uny" path="res://scripts/Player.gd" id="1_g2els"]
+[ext_resource type="PackedScene" uid="uid://qmqkq6xamyaw" path="res://scenes/bullet.tscn" id="2_qhqgy"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_dqkch"]
+radius = 20.0
+
+[node name="Player" type="CharacterBody2D"]
+motion_mode = 1
+script = ExtResource("1_g2els")
+bullet_scene = ExtResource("2_qhqgy")
+
+[node name="Polygon2D" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(20, 0, -20, -15, -20, 15)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_dqkch")
+
+[node name="Gun" type="Node2D" parent="."]
+position = Vector2(20, 0)
