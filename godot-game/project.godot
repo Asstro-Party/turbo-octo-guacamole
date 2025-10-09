@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Astro Party"
 run/main_scene="uid://bx4v3vf5w1h1u"
-config/features=PackedStringArray("4.5")
+config/features=PackedStringArray("4.4")
 config/icon="res://icon.png"
 
 [display]

@@ -150,13 +150,15 @@ function Game({ user, token }) {
         </div>
       </div>
 
+
       <div className="game-container">
         {/* Godot game will be embedded here */}
         <iframe
           id="godot-game"
-          src="/godot-game/index.html"
+          src={`/godot-game/index.html?lobbyId=${encodeURIComponent(lobbyId)}&userId=${encodeURIComponent(user.id)}&username=${encodeURIComponent(user.username)}`}
           title="Astro Party Game"
           className="godot-iframe"
+          allow="autoplay; microphone"
         />
       </div>
 

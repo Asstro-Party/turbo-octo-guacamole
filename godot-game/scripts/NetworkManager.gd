@@ -5,9 +5,12 @@ var ws_url = "ws://localhost:3001"
 var socket = WebSocketPeer.new()
 var connected = false
 
+# Store latest game state from server
+var latest_game_state = {}
+
 signal player_joined(user_id, username)
 signal game_started()
-signal player_action_received(user_id, action, data)
+signal game_state_received(state)
 signal kill_received(killer_id, victim_id)
 signal game_ended(results)
 
@@ -66,40 +69,37 @@ func _on_connection_established():
 	})
 
 func _handle_message(data: Dictionary):
-	match data.get("type", ""):
-		"joined":
-			print("Successfully joined game")
-
-		"player_joined":
-			player_joined.emit(data.get("userId"), data.get("username"))
-
-		"game_started":
-			game_started.emit()
-
-		"player_action":
-			player_action_received.emit(
-				data.get("userId"),
-				data.get("action"),
-				data.get("data")
-			)
-
-		"kill":
-			kill_received.emit(data.get("killerId"), data.get("victimId"))
-
-		"game_ended":
-			game_ended.emit(data.get("results"))
+		match data.get("type", ""):
+			"joined":
+				print("Successfully joined game")
+				if data.has("players"):
+					for pid in data["players"]:
+						if int(pid) != user_id:
+							player_joined.emit(int(pid), "Player" + str(pid))
+			"player_joined":
+				player_joined.emit(data.get("userId"), data.get("username"))
+			"game_started":
+				game_started.emit()
+			"game_state":
+				latest_game_state = data.get("state", {})
+				game_state_received.emit(latest_game_state)
+			"kill":
+				kill_received.emit(data.get("killerId"), data.get("victimId"))
+			"game_ended":
+				game_ended.emit(data.get("results"))
 
 func send_message(message: Dictionary):
 	if connected:
 		var json_str = JSON.stringify(message)
 		socket.send_text(json_str)
 
-func send_player_action(action: String, action_data: Dictionary):
+
+# Send player input (not state) to server
+func send_player_input(input: Dictionary):
 	send_message({
-		"type": "player_action",
+		"type": "player_input",
 		"userId": user_id,
-		"action": action,
-		"data": action_data
+		"input": input
 	})
 
 func send_kill(victim_id: int, session_id: int):

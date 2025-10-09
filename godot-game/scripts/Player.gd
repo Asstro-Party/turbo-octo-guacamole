@@ -33,33 +33,24 @@ func setup(p_player_id: int, p_is_local: bool, p_network_manager = null):
 func _physics_process(delta):
 	if is_local_player:
 		_handle_local_input(delta)
-	move_and_slide()
+	# Do not move_and_slide() here; position is set by GameManager from server
 
 func _handle_local_input(delta):
-	# Movement
+	# Movement input
 	var input_vector = Vector2.ZERO
 	input_vector.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
 	input_vector.y = Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
 	input_vector = input_vector.normalized()
 
-	velocity = input_vector * speed
+	var input_dict = {}
+	input_dict["move"] = {"x": input_vector.x, "y": input_vector.y}
+	input_dict["rotation"] = input_vector.angle() if input_vector.length() > 0 else rotation
+	# Optionally, add shoot or other actions here
 
-	# Rotation - rotate to face movement direction
-	if input_vector.length() > 0:
-		# Rotate to face the direction we're moving
-		rotation = input_vector.angle()
-
-	# Alternative: Use mouse for aiming (uncomment for mouse control)
-	# var mouse_pos = get_global_mouse_position()
-	# look_at(mouse_pos)
-
-	# Send position update to server
-	if network_manager and (velocity.length() > 0 or rotation != 0):
-		network_manager.send_player_action("move", {
-			"position": {"x": position.x, "y": position.y},
-			"rotation": rotation,
-			"velocity": {"x": velocity.x, "y": velocity.y}
-		})
+	if network_manager:
+		network_manager.send_player_input(input_dict)
+		# Debug: print sent input
+		# print("Sent input: ", input_dict)
 
 func _input(event):
 	if not is_local_player:
@@ -70,40 +61,18 @@ func _input(event):
 		shoot()
 
 func shoot():
-	if bullet_scene:
-		var bullet = bullet_scene.instantiate()
-		bullet.position = gun.global_position
-		bullet.rotation = rotation
-		bullet.shooter_id = player_id
-		get_parent().add_child(bullet)
-
-		player_shot.emit()
-
-		# Send shoot action to server
-		if network_manager:
-			network_manager.send_player_action("shoot", {
+	# Only send shoot input to server; do not spawn bullet locally
+	if network_manager:
+		network_manager.send_player_input({
+			"shoot": {
 				"position": {"x": gun.global_position.x, "y": gun.global_position.y},
 				"rotation": rotation
-			})
+			}
+		})
+		player_shot.emit()
 
 func apply_remote_action(action: String, data: Dictionary):
-	# Apply actions from other players
-	match action:
-		"move":
-			if data.has("position"):
-				position = Vector2(data.position.x, data.position.y)
-			if data.has("rotation"):
-				rotation = data.rotation
-			if data.has("velocity"):
-				velocity = Vector2(data.velocity.x, data.velocity.y)
-
-		"shoot":
-			if bullet_scene and data.has("position"):
-				var bullet = bullet_scene.instantiate()
-				bullet.position = Vector2(data.position.x, data.position.y)
-				bullet.rotation = data.rotation
-				bullet.shooter_id = player_id
-				get_parent().add_child(bullet)
+	pass # No longer used; state is set by GameManager from server
 
 func take_damage(damage: int, attacker_id: int):
 	health -= damage

@@ -3,9 +3,12 @@ extends Node
 # Manages the game state and players
 @export var player_scene: PackedScene
 
+
 var players = {}
+var bullets = {}
 var local_player_id = 0
 var session_id = 0
+
 
 @onready var network_manager = $NetworkManager
 @onready var players_container = $Players
@@ -14,7 +17,7 @@ func _ready():
 	# Connect to network manager signals
 	network_manager.player_joined.connect(_on_player_joined)
 	network_manager.game_started.connect(_on_game_started)
-	network_manager.player_action_received.connect(_on_player_action_received)
+	network_manager.game_state_received.connect(_on_game_state_received)
 	network_manager.kill_received.connect(_on_kill_received)
 	network_manager.game_ended.connect(_on_game_ended)
 
@@ -29,16 +32,13 @@ func _ready():
 
 func _setup_from_web_params():
 	# This would be called with actual parameters from the web page
-	# For now, using placeholder values
+	# For now, using randomized values for local/editor testing
 	var lobby_id = "test-lobby"
-	var user_id = 1
-	var username = "Player1"
+	var user_id = randi() % 10000 + 1
+	var username = "Player" + str(user_id)
 
 	network_manager.connect_to_server(lobby_id, user_id, username)
 	local_player_id = user_id
-
-	# Spawn local player
-	spawn_player(user_id, username, true)
 
 func spawn_player(player_id: int, username: String, is_local: bool):
 	if players.has(player_id):
@@ -83,9 +83,67 @@ func _on_game_started():
 		player.deaths = 0
 		player.health = 100
 
-func _on_player_action_received(user_id: int, action: String, data: Dictionary):
-	if players.has(user_id) and user_id != local_player_id:
-		players[user_id].apply_remote_action(action, data)
+
+# Update all players from authoritative game state
+func _on_game_state_received(state: Dictionary):
+	if not state.has("players"):
+		return
+	print("[DEBUG] Server state for all players:")
+	var server_player_ids = []
+	for pid_str in state["players"].keys():
+		var pid = int(pid_str)
+		server_player_ids.append(pid)
+		var pdata = state["players"][pid_str]
+		print("  Player ", pid, ": pos=", pdata["position"], ", rot=", pdata["rotation"])
+		if not players.has(pid):
+			spawn_player(pid, pdata.get("username", "Player" + str(pid)), pid == local_player_id)
+		var player = players[pid]
+		player.position = Vector2(pdata["position"]["x"], pdata["position"]["y"])
+		player.rotation = pdata["rotation"]
+		player.health = pdata.get("health", 100)
+		player.kills = pdata.get("kills", 0)
+		player.deaths = pdata.get("deaths", 0)
+
+	# --- Bullet sync ---
+	if state.has("bullets"):
+		var server_bullets = state["bullets"]
+		var server_bullet_ids = []
+		for bullet_data in server_bullets:
+			var bid = bullet_data["id"]
+			server_bullet_ids.append(bid)
+			if not bullets.has(bid):
+				var bullet_scene = preload("res://scenes/bullet.tscn")
+				var bullet = bullet_scene.instantiate()
+				bullet.position = Vector2(bullet_data["position"]["x"], bullet_data["position"]["y"])
+				bullet.rotation = bullet_data["rotation"]
+				bullet.shooter_id = bullet_data["shooterId"]
+				bullets[bid] = bullet
+				players_container.add_child(bullet)
+			else:
+				var bullet = bullets[bid]
+				bullet.position = Vector2(bullet_data["position"]["x"], bullet_data["position"]["y"])
+				bullet.rotation = bullet_data["rotation"]
+		# Remove bullets that no longer exist on server
+		var to_remove = []
+		for local_bid in bullets.keys():
+			if not server_bullet_ids.has(local_bid):
+				to_remove.append(local_bid)
+		for remove_bid in to_remove:
+			var node = bullets[remove_bid]
+			if node and node.get_parent():
+				node.get_parent().remove_child(node)
+			bullets.erase(remove_bid)
+
+	# Remove local player nodes that are not in the server state
+	var to_remove = []
+	for local_pid in players.keys():
+		if not server_player_ids.has(local_pid):
+			to_remove.append(local_pid)
+	for remove_pid in to_remove:
+		var node = players[remove_pid]
+		if node and node.get_parent():
+			node.get_parent().remove_child(node)
+		players.erase(remove_pid)
 
 func _on_kill_received(killer_id: int, victim_id: int):
 	print("Kill: ", killer_id, " killed ", victim_id)
