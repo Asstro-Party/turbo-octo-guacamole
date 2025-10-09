@@ -1,3 +1,133 @@
+/* Waiting Room Styles */
+.waiting-room-page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.waiting-room-card {
+  background: rgba(255,255,255,0.15);
+  border-radius: 18px;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  padding: 40px 32px 32px 32px;
+  min-width: 340px;
+  max-width: 400px;
+  width: 100%;
+  color: #fff;
+  text-align: center;
+  position: relative;
+}
+
+.lobby-id {
+  font-size: 0.8em;
+  background: #fff2;
+  padding: 2px 10px;
+  border-radius: 8px;
+  margin-left: 8px;
+  font-family: monospace;
+}
+
+.players-section {
+  margin: 30px 0 20px 0;
+}
+
+.player-count {
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+.players-list {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+
+.player-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(255,255,255,0.08);
+  border-radius: 12px;
+  padding: 12px 16px 10px 16px;
+  min-width: 80px;
+  box-shadow: 0 2px 8px 0 rgba(31, 38, 135, 0.10);
+  position: relative;
+  transition: transform 0.15s;
+}
+.player-avatar.you {
+  border: 2px solid #28a745;
+}
+.player-avatar.host {
+  border: 2px solid #ffd700;
+}
+.avatar-circle {
+  width: 40px;
+  height: 40px;
+  background: #fff3;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.7em;
+  margin-bottom: 6px;
+}
+.player-name {
+  font-size: 1em;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.host-badge {
+  background: #ffd700;
+  color: #333;
+  font-size: 0.75em;
+  font-weight: bold;
+  border-radius: 6px;
+  padding: 2px 8px;
+  margin-top: 3px;
+  box-shadow: 0 1px 4px #0002;
+}
+.waiting-actions {
+  margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.start-btn {
+  background: #28a745;
+  color: #fff;
+  font-size: 1.1em;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 12px 0;
+  border: none;
+  transition: background 0.2s;
+}
+.start-btn:disabled {
+  background: #aaa;
+  color: #eee;
+  cursor: not-allowed;
+}
+.leave-btn {
+  background: #dc3545;
+  color: #fff;
+  font-size: 1em;
+  border-radius: 8px;
+  padding: 10px 0;
+  border: none;
+  transition: background 0.2s;
+}
+.leave-btn:hover {
+  background: #b52a37;
+}
+.waiting-message {
+  color: #ffd700;
+  font-size: 1.1em;
+  margin-bottom: 8px;
+}
 * {
   margin: 0;
   padding: 0;

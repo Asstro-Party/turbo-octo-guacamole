@@ -5,6 +5,7 @@ import Signup from './pages/Signup';
 import Lobby from './pages/Lobby';
 import Profile from './pages/Profile';
 import Game from './pages/Game';
+import WaitingRoom from './pages/WaitingRoom';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
@@ -56,6 +57,10 @@ function App() {
         <Route
           path="/profile"
           element={token ? <Profile user={user} token={token} onLogout={handleLogout} /> : <Navigate to="/login" />}
+        />
+        <Route
+          path="/waiting/:lobbyId"
+          element={token ? <WaitingRoom user={user} token={token} /> : <Navigate to="/login" />}
         />
         <Route
           path="/game/:lobbyId"

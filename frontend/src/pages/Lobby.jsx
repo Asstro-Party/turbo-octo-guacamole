@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 import { useNavigate } from 'react-router-dom';
 import { getLobbies, createLobby, joinLobby } from '../services/api';
 
@@ -8,10 +9,32 @@ function Lobby({ user, token, onLogout }) {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  const wsRef = useRef(null);
+
   useEffect(() => {
     loadLobbies();
-    const interval = setInterval(loadLobbies, 3000); // Refresh every 3 seconds
-    return () => clearInterval(interval);
+    const interval = setInterval(loadLobbies, 3000); // Fallback polling
+
+    // Connect to WebSocket for lobby updates
+    const ws = new WebSocket(WS_URL);
+    ws.onopen = () => {
+      // No need to join a lobby, just listen for lobby_list_updated
+    };
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === 'lobby_list_updated') {
+          loadLobbies();
+        }
+      } catch (e) {}
+    };
+    ws.onerror = () => {};
+    wsRef.current = ws;
+
+    return () => {
+      clearInterval(interval);
+      if (wsRef.current) wsRef.current.close();
+    };
   }, []);
 
   const loadLobbies = async () => {
@@ -26,10 +49,11 @@ function Lobby({ user, token, onLogout }) {
     }
   };
 
+
   const handleCreateLobby = async () => {
     try {
       const response = await createLobby(4);
-      navigate(`/game/${response.data.lobbyId}`);
+      navigate(`/waiting/${response.data.lobbyId}`);
     } catch (err) {
       setError('Failed to create lobby');
     }
@@ -38,7 +62,7 @@ function Lobby({ user, token, onLogout }) {
   const handleJoinLobby = async (lobbyId) => {
     try {
       await joinLobby(lobbyId);
-      navigate(`/game/${lobbyId}`);
+      navigate(`/waiting/${lobbyId}`);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to join lobby');
     }

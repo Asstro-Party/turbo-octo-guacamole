@@ -9,6 +9,7 @@ import {
   getActiveLobbies
 } from '../config/redis.js';
 import { authenticate } from '../middleware/auth.js';
+import { broadcastLobbyListUpdate } from '../websocket/gameServer.js';
 
 const router = express.Router();
 
@@ -52,7 +53,11 @@ router.post('/create', authenticate, async (req, res) => {
       [lobbyId, userId, maxPlayers, 1]
     );
 
-    res.status(201).json(lobby);
+    // Broadcast updated lobby list
+    broadcastLobbyListUpdate();
+
+  res.status(201).json(lobby);
+  broadcastLobbyListUpdate();
 
   } catch (error) {
     console.error('Create lobby error:', error);
@@ -95,7 +100,11 @@ router.post('/:lobbyId/join', authenticate, async (req, res) => {
       [lobby.currentPlayers, lobbyId]
     );
 
-    res.json(lobby);
+    // Broadcast updated lobby list
+    broadcastLobbyListUpdate();
+
+  res.json(lobby);
+  broadcastLobbyListUpdate();
 
   } catch (error) {
     console.error('Join lobby error:', error);
@@ -115,8 +124,9 @@ router.post('/:lobbyId/leave', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Lobby not found' });
     }
 
-    lobby.players = lobby.players.filter(id => id !== userId);
-    lobby.currentPlayers--;
+  const oldPlayers = lobby.players.slice();
+  lobby.players = lobby.players.filter(id => id !== userId);
+  lobby.currentPlayers--;
 
     // If lobby is empty, delete it
     if (lobby.currentPlayers === 0) {
@@ -134,7 +144,23 @@ router.post('/:lobbyId/leave', authenticate, async (req, res) => {
       );
     }
 
-    res.json({ message: 'Left lobby successfully' });
+    // Notify all lobby members (except the leaver) in real time
+    try {
+      const { broadcast } = await import('../websocket/gameServer.js');
+      oldPlayers.filter(pid => pid !== userId).forEach(pid => {
+        broadcast(lobbyId, {
+          type: 'player_left',
+          userId,
+          lobbyId
+        });
+      });
+    } catch (e) { console.error('Failed to broadcast player_left', e); }
+
+    // Broadcast updated lobby list
+    broadcastLobbyListUpdate();
+
+  res.json({ message: 'Left lobby successfully' });
+  broadcastLobbyListUpdate();
 
   } catch (error) {
     console.error('Leave lobby error:', error);

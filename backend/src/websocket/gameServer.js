@@ -5,8 +5,12 @@ import pool from '../config/database.js';
 const connections = new Map(); // lobbyId -> Set of ws connections
 const userSockets = new Map(); // userId -> ws connection
 
+// Store all WebSocket connections (for lobby browser updates)
+const allClients = new Set();
+
 export function setupWebSocketServer(wss) {
   wss.on('connection', (ws) => {
+    allClients.add(ws);
     console.log('New WebSocket connection');
 
     let currentLobbyId = null;
@@ -53,6 +57,7 @@ export function setupWebSocketServer(wss) {
     });
 
     ws.on('close', () => {
+      allClients.delete(ws);
       console.log('WebSocket connection closed');
       if (currentLobbyId && connections.has(currentLobbyId)) {
         connections.get(currentLobbyId).delete(ws);
@@ -251,6 +256,7 @@ async function handleEndGame(lobbyId, results) {
   }
 }
 
+
 function broadcast(lobbyId, message, excludeWs = null) {
   if (!connections.has(lobbyId)) return;
 
@@ -262,4 +268,14 @@ function broadcast(lobbyId, message, excludeWs = null) {
   });
 }
 
-export { connections, userSockets, broadcast };
+// Broadcast to all connected clients (for lobby list updates)
+function broadcastLobbyListUpdate() {
+  const data = JSON.stringify({ type: 'lobby_list_updated', timestamp: Date.now() });
+  allClients.forEach((client) => {
+    if (client.readyState === 1) {
+      client.send(data);
+    }
+  });
+}
+
+export { connections, userSockets, broadcast, broadcastLobbyListUpdate };
