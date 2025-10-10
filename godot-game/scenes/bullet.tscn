@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://dphcsl3fq1hrv" path="res://scripts/Bullet.gd" id="1_mkf8s"]
 
 [sub_resource type="Gradient" id="Gradient_y25gk"]
-colors = PackedColorArray(0.79040414, 0.4273318, 1.92523e-07, 1, 1, 1, 0, 1)
+colors = PackedColorArray(0.790404, 0.427332, 1.92523e-07, 1, 1, 1, 0, 1)
 
 [sub_resource type="GradientTexture2D" id="GradientTexture2D_l5glv"]
 gradient = SubResource("Gradient_y25gk")

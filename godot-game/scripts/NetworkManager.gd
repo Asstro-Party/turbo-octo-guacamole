@@ -102,10 +102,13 @@ func send_player_input(input: Dictionary):
 		"input": input
 	})
 
-func send_kill(victim_id: int, session_id: int):
+func send_kill(killer_id: int, victim_id: int, session_id: int):
+	# Ensure caller provides both killer and victim IDs. user_id is still available
+	# Debug: log outgoing kill payload
+	print("[NetworkManager] Sending kill payload -> killer:", killer_id, "victim:", victim_id, "session:", session_id)
 	send_message({
 		"type": "kill",
-		"killerId": user_id,
+		"killerId": killer_id,
 		"victimId": victim_id,
 		"sessionId": session_id
 	})

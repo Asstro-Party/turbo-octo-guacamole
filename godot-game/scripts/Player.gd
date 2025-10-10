@@ -76,7 +76,10 @@ func apply_remote_action(action: String, data: Dictionary):
 
 func take_damage(damage: int, attacker_id: int):
 	health -= damage
+	# Debug: log damage received
+	print("[Player] take_damage from:", attacker_id, "new_health:", health, "player_id:", player_id)
 	if health <= 0:
+		print("[Player] died: player_id:", player_id, "killer_id:", attacker_id)
 		die(attacker_id)
 
 func die(killer_id: int):

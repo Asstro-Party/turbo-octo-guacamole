@@ -163,14 +163,15 @@ function handlePlayerInput(ws, message, lobbyId) {
         const pos = message.input.shoot.position;
         const rot = message.input.shoot.rotation;
         const speed = 600; // Example bullet speed
-        state.bullets.push({
+        const bulletObj = {
           id: bulletId,
           position: { x: pos.x, y: pos.y },
           velocity: { x: Math.cos(rot) * speed, y: Math.sin(rot) * speed },
           rotation: rot,
           shooterId: message.userId,
           createdAt: Date.now()
-        });
+        };
+        state.bullets.push(bulletObj);
       }
     }
   }
@@ -205,9 +206,63 @@ setInterval(() => {
       bullet.position.x += bullet.velocity.x * dt;
       bullet.position.y += bullet.velocity.y * dt;
     }
+    // Server-side collision detection: check bullets against players and apply damage
+    // Minimal authoritative hit detection to keep clients in sync.
+    const HIT_RADIUS = 20; // pixels
+    const DAMAGE = 25;
+    for (let bi = state.bullets.length - 1; bi >= 0; bi--) {
+      const bullet = state.bullets[bi];
+      // defensive checks
+      if (!bullet || !bullet.position || typeof bullet.shooterId === 'undefined') continue;
+      for (const pidStr in state.players) {
+        const pid = parseInt(pidStr);
+        if (pid === bullet.shooterId) continue; // don't hit shooter
+        const player = state.players[pidStr];
+        if (!player || !player.position) continue;
+        const dx = bullet.position.x - player.position.x;
+        const dy = bullet.position.y - player.position.y;
+        if (dx * dx + dy * dy <= HIT_RADIUS * HIT_RADIUS) {
+          // Hit detected — apply damage
+          player.health = (typeof player.health === 'number' ? player.health : 100) - DAMAGE;
+          console.log('[gameServer] Bullet', bullet.id, 'hit player', pid, 'shooter', bullet.shooterId, 'new_health', player.health);
+          // Remove the bullet
+          state.bullets.splice(bi, 1);
+
+          // Handle player death
+          if (player.health <= 0) {
+            // Update in-memory stats
+            if (!state.players[bullet.shooterId]) state.players[bullet.shooterId] = { kills: 0, deaths: 0, health: 100, position: { x: 100, y: 100 }, rotation: 0 };
+            state.players[bullet.shooterId].kills = (state.players[bullet.shooterId].kills || 0) + 1;
+            player.deaths = (player.deaths || 0) + 1;
+
+            // Broadcast kill event to lobby
+            broadcast(lobbyId, {
+              type: 'kill',
+              killerId: bullet.shooterId,
+              victimId: pid,
+              timestamp: Date.now()
+            });
+
+            // Respawn player (reset health and random position)
+            player.health = 100;
+            player.position = { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 };
+          }
+
+          // Bullet handled, stop checking other players for this bullet
+          break;
+        }
+      }
+    }
     // Remove bullets after 2 seconds (lifetime)
     state.bullets = state.bullets.filter(bullet => now - bullet.createdAt < 2000);
     // Broadcast updated state to all clients
+    broadcast(lobbyId, {
+      type: 'game_state',
+      state,
+      timestamp: Date.now()
+    });
+
+    // Also immediately broadcast state after collision handling so clients see authoritative health/positions
     broadcast(lobbyId, {
       type: 'game_state',
       state,
@@ -219,7 +274,51 @@ setInterval(() => {
 async function handleKill(message, lobbyId) {
   const { killerId, victimId, sessionId } = message;
 
+  // Debug: log incoming kill payload and socket mapping
+  console.log('[gameServer] handleKill called with:', { killerId, victimId, sessionId, lobbyId });
+  console.log('[gameServer] userSockets has killerId?', userSockets.has(killerId));
+
   try {
+    // Minimal server-side verification to avoid obvious spoofing:
+    // Verify there exists a recent bullet in the authoritative game state
+    // that was fired by the claimed killer and is close to the victim's server position.
+    const MAX_BULLET_AGE_MS = 500; // how old a bullet may be and still considered valid
+    const MAX_HIT_DISTANCE = 48; // pixels (tweak as needed for your game scale)
+
+    if (!lobbyId || !gameStates.has(lobbyId)) {
+      console.log('[gameServer] handleKill: no game state for lobby', lobbyId);
+      return; // ignore invalid report
+    }
+
+    const state = gameStates.get(lobbyId);
+    if (!state.players || !state.players[victimId]) {
+      console.log('[gameServer] handleKill: victim not found in state', victimId);
+      return;
+    }
+
+    const victimPos = state.players[victimId].position;
+    const now = Date.now();
+
+    // Find a matching bullet
+    const matchingBullet = (state.bullets || []).find(b => {
+      try {
+        if (b.shooterId != killerId) return false;
+        if (!b.position || typeof b.createdAt !== 'number') return false;
+        if (now - b.createdAt > MAX_BULLET_AGE_MS) return false;
+        const dx = (b.position.x || 0) - (victimPos.x || 0);
+        const dy = (b.position.y || 0) - (victimPos.y || 0);
+        const dist2 = dx * dx + dy * dy;
+        return dist2 <= (MAX_HIT_DISTANCE * MAX_HIT_DISTANCE);
+      } catch (e) {
+        return false;
+      }
+    });
+
+    if (!matchingBullet) {
+      console.log('[gameServer] handleKill: no matching bullet found — rejecting kill report', { killerId, victimId, lobbyId });
+      return; // reject the kill report silently
+    }
+
     // Update game participants
     await pool.query(
       'UPDATE game_participants SET kills = kills + 1 WHERE session_id = $1 AND user_id = $2',
