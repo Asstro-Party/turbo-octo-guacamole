@@ -30,12 +30,26 @@ func _ready():
 		local_player_id = 1
 		spawn_player(1, "TestPlayer", true)
 
+
 func _setup_from_web_params():
-	# This would be called with actual parameters from the web page
-	# For now, using randomized values for local/editor testing
-	var lobby_id = "test-lobby"
-	var user_id = randi() % 10000 + 1
-	var username = "Player" + str(user_id)
+	# Retrieve values stored in window.godotConfig by NetworkManager's JS
+	var lobby_id = ""
+	var user_id = 0
+	var username = ""
+
+	# Use JavaScript to read the config values from the global window object
+	if OS.has_feature("web"):
+		lobby_id = JavaScriptBridge.eval("window.godotConfig.lobbyId")
+		# Ensure user_id is correctly converted to an integer
+		user_id = int(JavaScriptBridge.eval("window.godotConfig.userId"))
+		username = JavaScriptBridge.eval("window.godotConfig.username")
+	
+	# Fallback/Debug check
+	if user_id == 0 or lobby_id == "":
+		print("Error: Could not retrieve valid web parameters. Falling back to test.")
+		user_id = randi() % 10000 + 1
+		username = "Player" + str(user_id)
+		lobby_id = "test-lobby"
 
 	network_manager.connect_to_server(lobby_id, user_id, username)
 	local_player_id = user_id
