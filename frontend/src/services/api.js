@@ -51,4 +51,7 @@ export const leaveLobby = (lobbyId) =>
 export const getLobby = (lobbyId) =>
   api.get(`/lobby/${lobbyId}`);
 
+export const selectPlayerModel = (lobbyId, model) =>
+  api.post(`/lobby/${lobbyId}/select-model`, { model });
+
 export default api;

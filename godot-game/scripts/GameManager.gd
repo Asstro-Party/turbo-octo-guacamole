@@ -6,6 +6,7 @@ extends Node
 var players = {}
 var local_player_id = 0
 var session_id = 0
+var player_models: Dictionary = {}
 
 @onready var network_manager = $NetworkManager
 @onready var players_container = $Players
@@ -17,6 +18,9 @@ func _ready():
 	network_manager.player_action_received.connect(_on_player_action_received)
 	network_manager.kill_received.connect(_on_kill_received)
 	network_manager.game_ended.connect(_on_game_ended)
+	network_manager.player_model_state_received.connect(_on_player_model_state_received)
+	network_manager.player_model_selected.connect(_on_player_model_selected)
+	network_manager.player_left_lobby.connect(_on_player_left_lobby)
 
 	# Get game info from URL parameters (when embedded in web page)
 	if OS.has_feature("web"):
@@ -28,14 +32,35 @@ func _ready():
 		spawn_player(1, "TestPlayer", true)
 
 func _setup_from_web_params():
-	# This would be called with actual parameters from the web page
-	# For now, using placeholder values
-	var lobby_id = "test-lobby"
-	var user_id = 1
-	var username = "Player1"
+	var lobby_id = ""
+	var user_id = 0
+	var username = "Player"
+	var model_name = ""
+
+	if JavaScriptBridge:
+		lobby_id = str(JavaScriptBridge.eval("window.godotConfig?.lobbyId || ''"))
+		user_id = int(JavaScriptBridge.eval("window.godotConfig?.userId || '0'"))
+		username = str(JavaScriptBridge.eval("window.godotConfig?.username || 'Player'"))
+		model_name = str(JavaScriptBridge.eval("window.godotConfig?.playerModel || ''"))
+
+	var invalid_tokens = ["null", "undefined"]
+	if invalid_tokens.has(lobby_id):
+		lobby_id = ""
+	if invalid_tokens.has(username):
+		username = "Player"
+	if invalid_tokens.has(model_name):
+		model_name = ""
+
+	if lobby_id.is_empty() or user_id == 0:
+		print("Missing lobby or user info from web parameters. Spawning local test player.")
+		local_player_id = 1
+		spawn_player(local_player_id, "WebTest", true)
+		return
 
 	network_manager.connect_to_server(lobby_id, user_id, username)
 	local_player_id = user_id
+	if model_name != "":
+		player_models[str(user_id)] = model_name
 
 	# Spawn local player
 	spawn_player(user_id, username, true)
@@ -58,6 +83,8 @@ func spawn_player(player_id: int, username: String, is_local: bool):
 
 	players_container.add_child(player)
 	players[player_id] = player
+
+	_apply_player_model(player_id)
 
 	print("Spawned player: ", username, " (", player_id, ")")
 
@@ -105,3 +132,31 @@ func _on_game_ended(results: Array):
 	print("Game ended! Results: ", results)
 	# Show end game screen
 	# Return to lobby after delay
+
+func _on_player_model_state_received(models: Dictionary):
+	player_models = models.duplicate(true)
+	for player_id in players.keys():
+		_apply_player_model(player_id)
+
+func _on_player_model_selected(user_id: int, model: String, models: Dictionary):
+	if models:
+		player_models = models.duplicate(true)
+	else:
+		player_models[str(user_id)] = model
+	_apply_player_model(user_id)
+
+func _on_player_left_lobby(user_id: int, model: String):
+	player_models.erase(str(user_id))
+	if players.has(user_id):
+		_apply_player_model(user_id)
+
+func _apply_player_model(player_id: int):
+	if not players.has(player_id):
+		return
+
+	var key = str(player_id)
+	var model_name = player_models.get(key, "")
+	if model_name == null:
+		model_name = ""
+
+	players[player_id].set_player_model(model_name)

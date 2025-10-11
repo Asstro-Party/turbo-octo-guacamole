@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { leaveLobby } from '../services/api';
+import { getLobby, leaveLobby } from '../services/api';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 
@@ -9,11 +9,15 @@ function Game({ user, token }) {
   const navigate = useNavigate();
   const [connected, setConnected] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [playerModels, setPlayerModels] = useState({});
+  const [localModel, setLocalModel] = useState('');
+  const [loadingLobby, setLoadingLobby] = useState(true);
   const wsRef = useRef(null);
   const peerConnectionsRef = useRef({});
   const localStreamRef = useRef(null);
 
   useEffect(() => {
+    loadLobby();
     // Connect to game WebSocket
     connectWebSocket();
 
@@ -24,6 +28,20 @@ function Game({ user, token }) {
       handleLeaveGame();
     };
   }, [lobbyId]);
+
+  const loadLobby = async () => {
+    try {
+      const response = await getLobby(lobbyId);
+      const models = response.data.playerModels || {};
+      setPlayerModels(models);
+      const key = String(user.id);
+      setLocalModel(models[key] || '');
+    } catch (err) {
+      console.error('Failed to load lobby:', err);
+    } finally {
+      setLoadingLobby(false);
+    }
+  };
 
   const connectWebSocket = () => {
     const ws = new WebSocket(WS_URL);
@@ -82,6 +100,45 @@ function Game({ user, token }) {
         console.log(`Player ${message.killerId} killed ${message.victimId}`);
         sendToGodot(message);
         break;
+      case 'player_model_state': {
+        const models = message.playerModels || {};
+        setPlayerModels(models);
+        const key = String(user.id);
+        if (models[key]) {
+          setLocalModel(models[key]);
+        }
+        sendToGodot(message);
+        break;
+      }
+      case 'player_model_selected': {
+        if (message.playerModels) {
+          setPlayerModels(message.playerModels);
+          const next = message.playerModels[String(user.id)];
+          if (next) {
+            setLocalModel(next);
+          }
+        } else {
+          setPlayerModels(prev => {
+            const updated = { ...prev };
+            updated[String(message.userId)] = message.model;
+            return updated;
+          });
+          if (message.userId === user.id) {
+            setLocalModel(message.model);
+          }
+        }
+        sendToGodot(message);
+        break;
+      }
+      case 'player_left': {
+        setPlayerModels(prev => {
+          const updated = { ...prev };
+          delete updated[String(message.userId)];
+          return updated;
+        });
+        sendToGodot(message);
+        break;
+      }
       case 'game_ended':
         console.log('Game ended!', message.results);
         setTimeout(() => navigate('/lobby'), 3000);
@@ -96,6 +153,18 @@ function Game({ user, token }) {
       iframe.contentWindow.postMessage(message, '*');
     }
   };
+
+  const iframeSrc = useMemo(() => {
+    const params = new URLSearchParams({
+      lobbyId,
+      userId: user.id,
+      username: user.username
+    });
+    if (localModel) {
+      params.append('playerModel', localModel);
+    }
+    return `/godot-game/index.html?${params.toString()}`;
+  }, [lobbyId, user.id, user.username, localModel]);
 
   const handleLeaveGame = async () => {
     try {
@@ -152,12 +221,17 @@ function Game({ user, token }) {
 
       <div className="game-container">
         {/* Godot game will be embedded here */}
-        <iframe
-          id="godot-game"
-          src="/godot-game/index.html"
-          title="Astro Party Game"
-          className="godot-iframe"
-        />
+        {loadingLobby ? (
+          <div className="game-loading">Loading game...</div>
+        ) : (
+          <iframe
+            key={iframeSrc}
+            id="godot-game"
+            src={iframeSrc}
+            title="Astro Party Game"
+            className="godot-iframe"
+          />
+        )}
       </div>
 
       <div className="game-instructions">
