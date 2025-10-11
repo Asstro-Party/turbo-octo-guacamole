@@ -14,6 +14,26 @@ import { broadcastLobbyListUpdate, broadcast } from '../websocket/gameServer.js'
 const router = express.Router();
 const AVAILABLE_PLAYER_MODELS = ['player1.png', 'player2.png', 'player3.png', 'player4.png'];
 
+// Get user's current active lobby
+router.get('/current', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const lobbies = await getActiveLobbies();
+
+    // Find any lobby where the user is a player
+    const userLobby = lobbies.find(l => l.players.includes(userId));
+
+    if (userLobby) {
+      res.json({ lobbyId: userLobby.lobbyId, lobby: userLobby });
+    } else {
+      res.json({ lobbyId: null });
+    }
+  } catch (error) {
+    console.error('Get current lobby error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get all active lobbies (server browser)
 router.get('/list', authenticate, async (req, res) => {
   try {

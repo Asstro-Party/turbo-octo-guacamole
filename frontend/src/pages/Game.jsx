@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getLobby, leaveLobby } from '../services/api';
+import SpaceBackground from '../components/SpaceBackground';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 
@@ -18,7 +19,6 @@ function Game({ user, token }) {
 
   useEffect(() => {
     loadLobby();
-    // Connect to game WebSocket
     connectWebSocket();
 
     return () => {
@@ -47,10 +47,7 @@ function Game({ user, token }) {
     const ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
-      console.log('Connected to game server');
       setConnected(true);
-
-      // Join the game
       ws.send(JSON.stringify({
         type: 'join_game',
         lobbyId,
@@ -69,7 +66,6 @@ function Game({ user, token }) {
     };
 
     ws.onclose = () => {
-      console.log('Disconnected from game server');
       setConnected(false);
     };
 
@@ -77,29 +73,7 @@ function Game({ user, token }) {
   };
 
   const handleGameMessage = (message) => {
-    console.log('Game message:', message);
-
     switch (message.type) {
-      case 'joined':
-        console.log('Successfully joined game');
-        break;
-      case 'player_joined':
-        console.log(`Player ${message.username} joined`);
-        break;
-      case 'game_started':
-        console.log('Game started!');
-        break;
-      case 'game_state':
-        // Update Godot game state
-        sendToGodot(message);
-        break;
-      case 'player_action':
-        sendToGodot(message);
-        break;
-      case 'kill':
-        console.log(`Player ${message.killerId} killed ${message.victimId}`);
-        sendToGodot(message);
-        break;
       case 'player_model_state': {
         const models = message.playerModels || {};
         setPlayerModels(models);
@@ -118,7 +92,7 @@ function Game({ user, token }) {
             setLocalModel(next);
           }
         } else {
-          setPlayerModels(prev => {
+          setPlayerModels((prev) => {
             const updated = { ...prev };
             updated[String(message.userId)] = message.model;
             return updated;
@@ -131,7 +105,7 @@ function Game({ user, token }) {
         break;
       }
       case 'player_left': {
-        setPlayerModels(prev => {
+        setPlayerModels((prev) => {
           const updated = { ...prev };
           delete updated[String(message.userId)];
           return updated;
@@ -139,15 +113,24 @@ function Game({ user, token }) {
         sendToGodot(message);
         break;
       }
+      case 'joined':
+      case 'player_joined':
+      case 'game_started':
+      case 'game_state':
+      case 'player_action':
+      case 'kill':
       case 'game_ended':
-        console.log('Game ended!', message.results);
-        setTimeout(() => navigate('/lobby'), 3000);
+        sendToGodot(message);
+        if (message.type === 'game_ended') {
+          setTimeout(() => navigate('/lobby'), 3000);
+        }
+        break;
+      default:
         break;
     }
   };
 
   const sendToGodot = (message) => {
-    // Send message to Godot game via postMessage
     const iframe = document.getElementById('godot-game');
     if (iframe && iframe.contentWindow) {
       iframe.contentWindow.postMessage(message, '*');
@@ -180,14 +163,13 @@ function Game({ user, token }) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         localStreamRef.current = stream;
         setVoiceEnabled(true);
-        // TODO: Set up WebRTC peer connections
       } catch (err) {
         console.error('Failed to access microphone:', err);
         alert('Could not access microphone');
       }
     } else {
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
         localStreamRef.current = null;
       }
       setVoiceEnabled(false);
@@ -200,44 +182,59 @@ function Game({ user, token }) {
   };
 
   return (
-    <div className="game-page">
-      <div className="game-header">
-        <div className="game-info">
-          <h3>Lobby: {lobbyId.substring(0, 8)}</h3>
-          <span className={`status ${connected ? 'connected' : 'disconnected'}`}>
-            {connected ? '● Connected' : '○ Disconnected'}
-          </span>
+    <SpaceBackground contentClassName="gap-10 py-14">
+      <header className="w-full max-w-6xl rounded-3xl border border-white/10 bg-slate-900/30 px-6 py-6 shadow-glass-lg backdrop-blur-2xl sm:px-10">
+        <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-2">
+            <h3 className="text-sm uppercase tracking-[0.35em] text-slate-300/80">Lobby</h3>
+            <div className="flex items-center gap-3">
+              <span className="text-2xl font-semibold uppercase tracking-[0.3em] text-slate-100">
+                {lobbyId.substring(0, 8)}
+              </span>
+              <span className={`text-xs uppercase tracking-[0.35em] ${connected ? 'text-emerald-300' : 'text-rose-300'}`}>
+                {connected ? '● Connected' : '○ Disconnected'}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              className={`rounded-2xl border border-white/15 px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] transition ${voiceEnabled ? 'border-emerald-300/60 bg-emerald-300/10 text-emerald-200' : 'bg-slate-900/40 text-slate-200 hover:border-sky-400/60 hover:text-white'}`}
+              onClick={toggleVoiceChat}
+            >
+              {voiceEnabled ? 'Voice On' : 'Voice Off'}
+            </button>
+            <button
+              onClick={handleLeaveLobby}
+              className="rounded-2xl border border-rose-400/60 bg-rose-500/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] text-rose-200 transition hover:border-rose-300 hover:text-rose-100"
+            >
+              Leave Game
+            </button>
+          </div>
         </div>
-        <div className="game-controls">
-          <button
-            className={`voice-btn ${voiceEnabled ? 'active' : ''}`}
-            onClick={toggleVoiceChat}
-          >
-            {voiceEnabled ? '🎤 Voice On' : '🎤 Voice Off'}
-          </button>
-          <button onClick={handleLeaveLobby}>Leave Game</button>
-        </div>
-      </div>
+      </header>
 
-      <div className="game-container">
-        {/* Godot game will be embedded here */}
+      <div className="w-full max-w-6xl rounded-3xl border border-white/10 bg-slate-900/25 p-4 shadow-glass-lg backdrop-blur-2xl sm:p-6">
         {loadingLobby ? (
-          <div className="game-loading">Loading game...</div>
+          <div className="flex h-[420px] items-center justify-center rounded-2xl border border-white/10 bg-slate-900/40 text-sm uppercase tracking-[0.3em] text-slate-300/70">
+            Loading game...
+          </div>
         ) : (
           <iframe
             key={iframeSrc}
             id="godot-game"
             src={iframeSrc}
             title="Astro Party Game"
-            className="godot-iframe"
+            className="h-[420px] w-full rounded-2xl border border-white/10 bg-slate-950 shadow-inner shadow-black/40 md:h-[520px] lg:h-[640px]"
           />
         )}
       </div>
 
-      <div className="game-instructions">
-        <p><strong>Controls:</strong> WASD to move, Mouse to aim, Click to shoot</p>
+      <div className="w-full max-w-6xl rounded-3xl border border-white/10 bg-slate-900/25 px-6 py-4 text-center text-xs uppercase tracking-[0.3em] text-slate-300/75 shadow-glass-lg backdrop-blur-2xl">
+        <p>
+          <strong className="font-semibold text-slate-100">Controls:</strong> WASD to move, Mouse to aim, Click to shoot
+        </p>
       </div>
-    </div>
+    </SpaceBackground>
   );
 }
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getLobby, leaveLobby, selectPlayerModel } from '../services/api';
+import SpaceBackground from '../components/SpaceBackground';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 const PLAYER_MODELS = [
@@ -48,6 +49,12 @@ function WaitingRoom({ user }) {
           setSelectionError('');
         }
       }
+      if (message.type === 'player_model_state') {
+        setPlayerModels(message.playerModels || {});
+        if (message.userId === user?.id) {
+          setSelectionError('');
+        }
+      }
     };
     wsRef.current = ws;
     return () => {
@@ -82,7 +89,7 @@ function WaitingRoom({ user }) {
   };
 
   const handleSelectModel = async (modelId) => {
-    if (selectingModel) return;
+    if (selectingModel || !userKey) return;
 
     const takenByOther = Object.entries(playerModels || {}).some(
       ([pid, selected]) => selected === modelId && pid !== userKey
@@ -103,7 +110,7 @@ function WaitingRoom({ user }) {
       if (response.data?.playerModels) {
         setPlayerModels(response.data.playerModels);
       } else {
-        setPlayerModels(prev => ({ ...prev, [userKey]: modelId }));
+        setPlayerModels((prev) => ({ ...prev, [userKey]: modelId }));
       }
     } catch (err) {
       setSelectionError(err.response?.data?.error || 'Failed to select model.');
@@ -113,57 +120,89 @@ function WaitingRoom({ user }) {
     }
   };
 
-  if (loading) return <div>Loading lobby...</div>;
-  if (!lobby) return <div>Lobby not found.</div>;
+  if (loading)
+    return (
+      <SpaceBackground>
+        <div className="text-sm uppercase tracking-[0.3em] text-slate-300/70">Loading lobby...</div>
+      </SpaceBackground>
+    );
+  if (!lobby)
+    return (
+      <SpaceBackground>
+        <div className="text-sm uppercase tracking-[0.3em] text-slate-300/70">Lobby not found.</div>
+      </SpaceBackground>
+    );
 
   return (
-    <div className="waiting-room-page">
-      <div className="waiting-room-card">
-        <h2>Lobby <span className="lobby-id">{lobbyId.substring(0, 8)}</span></h2>
-        <div className="players-section">
-          <h3>Players <span className="player-count">({players.length}/{lobby.maxPlayers})</span></h3>
-          <div className="players-list">
-            {players.map((pid) => (
-              <div key={pid} className={`player-avatar${pid === lobby.hostUserId ? ' host' : ''}${pid === user.id ? ' you' : ''}`}>
-                <div className="avatar-circle">
-                  <span role="img" aria-label="avatar">{pid === lobby.hostUserId ? '👑' : '🧑'}</span>
-                </div>
-                <div className="player-name">{pid === user.id ? 'You' : `Player ${pid.toString().substring(0, 6)}`}</div>
-                <div className="player-model-preview">
-                  {playerModels && playerModels[String(pid)] ? (
+    <SpaceBackground contentClassName="py-14">
+      <div className="w-full max-w-3xl rounded-3xl border border-white/10 bg-slate-900/25 p-10 shadow-glass-lg backdrop-blur-2xl">
+        <div className="text-center">
+          <h2 className="text-2xl font-semibold uppercase tracking-[0.35em] text-slate-100">
+            Lobby <span className="rounded-xl bg-slate-900/60 px-3 py-1 text-xs font-normal uppercase tracking-[0.4em] text-slate-300/80">{lobbyId.substring(0, 8)}</span>
+          </h2>
+          <p className="mt-4 text-xs uppercase tracking-[0.3em] text-slate-300/75">
+            Pick your pilot, then wait for the launch signal.
+          </p>
+        </div>
+
+        <div className="mt-10">
+          <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-300/70">
+            <span>Players ({players.length}/{lobby.maxPlayers})</span>
+            {selectionError && (
+              <span className="rounded-xl border border-rose-400/50 bg-rose-500/10 px-3 py-1 text-[0.65rem] text-rose-200">
+                {selectionError}
+              </span>
+            )}
+          </div>
+
+          <div className="mt-6 flex flex-wrap justify-center gap-4">
+            {players.map((pid) => {
+              const isYou = pid === user.id;
+              const isHostPlayer = pid === lobby.hostUserId;
+              const model = playerModels[String(pid)];
+              return (
+                <div
+                  key={pid}
+                  className={`flex w-40 flex-col items-center rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-5 text-center shadow-lg shadow-black/30 transition ${isYou ? 'border-emerald-400/60 shadow-emerald-400/20' : ''} ${isHostPlayer ? 'border-amber-300/70 shadow-amber-300/20' : ''}`}
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-800/60 text-xl">
+                    {isHostPlayer ? '👑' : '🧑'}
+                  </div>
+                  <p className="mt-3 text-sm font-semibold text-slate-100">
+                    {isYou ? 'You' : `Player ${pid.toString().substring(0, 6)}`}
+                  </p>
+                  {model ? (
                     <img
-                      src={`/players/${playerModels[String(pid)]}`}
-                      alt={`Selected model ${playerModels[String(pid)]}`}
-                      style={{ width: 48, height: 48 }}
+                      src={`/players/${model}`}
+                      alt={`Selected model ${model}`}
+                      className="mt-4 h-12 w-12 rounded-xl shadow-md shadow-black/40"
                     />
                   ) : (
-                    <span
-                      className="model-placeholder"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: 48,
-                        height: 48,
-                        background: '#1f1f1f',
-                        color: '#bbb',
-                        borderRadius: 8,
-                        fontSize: 12
-                      }}
-                    >
+                    <span className="mt-4 flex h-12 w-12 items-center justify-center rounded-xl border border-dashed border-white/20 text-[0.55rem] uppercase tracking-[0.25em] text-slate-400">
                       No model
                     </span>
                   )}
+                  {isHostPlayer && (
+                    <span className="mt-3 rounded-full border border-amber-300/50 bg-amber-200/10 px-3 py-1 text-[0.55rem] uppercase tracking-[0.35em] text-amber-200">
+                      Host
+                    </span>
+                  )}
+                  {isYou && (
+                    <span className="mt-2 rounded-full border border-emerald-300/40 bg-emerald-300/10 px-3 py-1 text-[0.55rem] uppercase tracking-[0.35em] text-emerald-200">
+                      You
+                    </span>
+                  )}
                 </div>
-                {pid === lobby.hostUserId && <div className="host-badge">Host</div>}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
-        <div className="model-selection">
-          <h3>Choose Your Pilot</h3>
-          {selectionError && <div className="error">{selectionError}</div>}
-          <div className="model-grid">
+
+        <div className="mt-10">
+          <h3 className="text-center text-xs uppercase tracking-[0.35em] text-slate-300/70">
+            Choose Your Pilot
+          </h3>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
             {PLAYER_MODELS.map(({ id, label }) => {
               const takenByOther = Object.entries(playerModels || {}).some(
                 ([pid, selected]) => selected === id && pid !== userKey
@@ -172,33 +211,46 @@ function WaitingRoom({ user }) {
               return (
                 <button
                   key={id}
-                  className={`model-option${isSelected ? ' selected' : ''}`}
                   onClick={() => handleSelectModel(id)}
                   disabled={takenByOther || selectingModel || !userKey}
+                  className={`flex items-center gap-4 rounded-2xl border border-white/10 bg-slate-900/60 px-5 py-4 text-left transition hover:border-sky-400/50 ${isSelected ? 'border-emerald-400/60 shadow-lg shadow-emerald-400/20' : ''} ${takenByOther ? 'opacity-50' : ''}`}
                 >
-                  <img src={`/players/${id}`} alt={label} style={{ width: 64, height: 64 }} />
-                  <span>{takenByOther ? 'Taken' : label}</span>
+                  <img src={`/players/${id}`} alt={label} className="h-16 w-16 rounded-xl shadow-md shadow-black/40" />
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-100">{label}</p>
+                    <p className="mt-1 text-[0.6rem] uppercase tracking-[0.35em] text-slate-400">
+                      {takenByOther ? 'Taken' : isSelected ? 'Locked in' : 'Available'}
+                    </p>
+                  </div>
                 </button>
               );
             })}
           </div>
         </div>
-        <div className="waiting-actions">
+
+        <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           {isHost ? (
             <button
-              className="start-btn"
+              className="rounded-2xl bg-gradient-to-r from-emerald-400 via-cyan-400 to-sky-500 px-6 py-3 text-[0.65rem] font-semibold uppercase tracking-[0.4em] text-slate-900 shadow-lg shadow-emerald-400/30 transition hover:-translate-y-0.5 hover:shadow-emerald-400/45 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               onClick={handleStartGame}
               disabled={players.length < 2 || players.length > 4}
             >
               {players.length < 2 ? 'Need at least 2 players' : 'Start Game'}
             </button>
           ) : (
-            <div className="waiting-message">Waiting for host to start the game...</div>
+            <div className="rounded-2xl border border-white/10 bg-slate-900/60 px-5 py-3 text-center text-[0.65rem] uppercase tracking-[0.35em] text-slate-300/70">
+              Waiting for host to start the game...
+            </div>
           )}
-          <button className="leave-btn" onClick={handleLeave}>Leave Lobby</button>
+          <button
+            className="rounded-2xl border border-rose-400/50 bg-rose-500/10 px-6 py-3 text-[0.65rem] font-semibold uppercase tracking-[0.4em] text-rose-200 transition hover:border-rose-300 hover:text-rose-100"
+            onClick={handleLeave}
+          >
+            Leave Lobby
+          </button>
         </div>
       </div>
-    </div>
+    </SpaceBackground>
   );
 }
 
