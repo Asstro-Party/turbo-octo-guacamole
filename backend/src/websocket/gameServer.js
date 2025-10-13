@@ -1,3 +1,9 @@
+// Authoritative server-side game state
+const gameStates = new Map(); // lobbyId -> { players: { [userId]: { ... } }, bullets: [ { id, position, velocity, rotation, shooterId, ... } ] }
+const playerInputs = new Map(); // lobbyId -> { [userId]: latestInput }
+
+// Game loop interval (ms)
+const TICK_RATE = 50; // 20 times per second
 import { getLobby, updateLobby } from '../config/redis.js';
 import pool from '../config/database.js';
 
@@ -27,13 +33,9 @@ export function setupWebSocketServer(wss) {
             currentUserId = message.userId;
             break;
 
-          case 'game_state':
-            await handleGameState(ws, message, currentLobbyId);
-            break;
-
-          case 'player_action':
-            await handlePlayerAction(ws, message, currentLobbyId);
-            break;
+              case 'player_input':
+                handlePlayerInput(ws, message, currentLobbyId);
+                break;
 
           case 'kill':
             await handleKill(message, currentLobbyId);
@@ -67,6 +69,13 @@ export function setupWebSocketServer(wss) {
       }
       if (currentUserId) {
         userSockets.delete(currentUserId);
+        // Remove player from server game state
+        if (currentLobbyId && gameStates.has(currentLobbyId)) {
+          const state = gameStates.get(currentLobbyId);
+          if (state.players && state.players[currentUserId]) {
+            delete state.players[currentUserId];
+          }
+        }
       }
     });
 
@@ -86,11 +95,33 @@ async function handleJoinGame(ws, message, wss) {
   connections.get(lobbyId).add(ws);
   userSockets.set(userId, ws);
 
-  // Send confirmation to player
+
+  // Initialize game state for this lobby if not present
+  if (!gameStates.has(lobbyId)) {
+    gameStates.set(lobbyId, { players: {}, bullets: [] });
+  }
+  // Add player to game state if not present
+  const state = gameStates.get(lobbyId);
+  if (!state.players[userId]) {
+    state.players[userId] = {
+      position: { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 },
+      rotation: 0,
+      velocity: { x: 0, y: 0 },
+      health: 100,
+      speed: 200,
+      username
+    };
+  }
+  // Get full player list for this lobby
+  const lobby = await getLobby(lobbyId);
+  const playerList = lobby && lobby.players ? lobby.players : [userId];
+
+  // Send confirmation and player list to the joining player
   ws.send(JSON.stringify({
     type: 'joined',
     lobbyId,
-    userId
+    userId,
+    players: playerList
   }));
 
   // Broadcast to all players in lobby
@@ -99,19 +130,6 @@ async function handleJoinGame(ws, message, wss) {
     userId,
     username
   }, ws);
-
-  try {
-    const lobby = await getLobby(lobbyId);
-    if (lobby && lobby.playerModels) {
-      ws.send(JSON.stringify({
-        type: 'player_model_state',
-        lobbyId,
-        playerModels: lobby.playerModels
-      }));
-    }
-  } catch (error) {
-    console.error('Failed to send player model state:', error);
-  }
 
   console.log(`Player ${username} joined lobby ${lobbyId}`);
 }
@@ -127,23 +145,180 @@ async function handleGameState(ws, message, lobbyId) {
   }
 }
 
-async function handlePlayerAction(ws, message, lobbyId) {
-  // Broadcast player actions (movement, shooting, etc.)
-  if (lobbyId) {
-    broadcast(lobbyId, {
-      type: 'player_action',
-      userId: message.userId,
-      action: message.action,
-      data: message.data,
-      timestamp: Date.now()
-    }, ws);
+
+function handlePlayerInput(ws, message, lobbyId) {
+  // Store latest input for this player
+  if (!lobbyId || !message.userId) return;
+  if (!playerInputs.has(lobbyId)) playerInputs.set(lobbyId, {});
+  playerInputs.get(lobbyId)[message.userId] = message.input;
+
+  // Handle shoot input
+  if (message.input && message.input.shoot) {
+    const state = gameStates.get(lobbyId);
+    if (state) {
+      // Create a bullet with unique id
+      const bulletId = Date.now().toString() + Math.floor(Math.random() * 10000);
+      const shooter = state.players[message.userId];
+      if (shooter) {
+        const pos = message.input.shoot.position;
+        const rot = message.input.shoot.rotation;
+        const speed = 600; // Example bullet speed
+        const bulletObj = {
+          id: bulletId,
+          position: { x: pos.x, y: pos.y },
+          velocity: { x: Math.cos(rot) * speed, y: Math.sin(rot) * speed },
+          rotation: rot,
+          shooterId: message.userId,
+          createdAt: Date.now()
+        };
+        state.bullets.push(bulletObj);
+      }
+    }
   }
 }
+
+// Main game loop for all lobbies
+setInterval(() => {
+  for (const [lobbyId, state] of gameStates.entries()) {
+    const inputs = playerInputs.get(lobbyId) || {};
+    // Update each player's state based on their input
+    for (const userId in state.players) {
+      const input = inputs[userId];
+      if (input) {
+        // Example: input = { move: {x, y}, rotation, shoot }
+        // Update position, rotation, etc. (simple physics)
+        const player = state.players[userId];
+        if (input.move) {
+          player.velocity = input.move;
+          player.position.x += player.velocity.x * (TICK_RATE / 1000) * player.speed;
+          player.position.y += player.velocity.y * (TICK_RATE / 1000) * player.speed;
+        }
+        if (typeof input.rotation === 'number') {
+          player.rotation = input.rotation;
+        }
+      }
+    }
+    // Update bullets
+    const dt = TICK_RATE / 1000;
+    const now = Date.now();
+    // Move bullets
+    for (const bullet of state.bullets) {
+      bullet.position.x += bullet.velocity.x * dt;
+      bullet.position.y += bullet.velocity.y * dt;
+    }
+    // Server-side collision detection: check bullets against players and apply damage
+    // Minimal authoritative hit detection to keep clients in sync.
+    const HIT_RADIUS = 20; // pixels
+    const DAMAGE = 25;
+    for (let bi = state.bullets.length - 1; bi >= 0; bi--) {
+      const bullet = state.bullets[bi];
+      // defensive checks
+      if (!bullet || !bullet.position || typeof bullet.shooterId === 'undefined') continue;
+      for (const pidStr in state.players) {
+        const pid = parseInt(pidStr);
+        if (pid === bullet.shooterId) continue; // don't hit shooter
+        const player = state.players[pidStr];
+        if (!player || !player.position) continue;
+        const dx = bullet.position.x - player.position.x;
+        const dy = bullet.position.y - player.position.y;
+        if (dx * dx + dy * dy <= HIT_RADIUS * HIT_RADIUS) {
+          // Hit detected — apply damage
+          player.health = (typeof player.health === 'number' ? player.health : 100) - DAMAGE;
+          console.log('[gameServer] Bullet', bullet.id, 'hit player', pid, 'shooter', bullet.shooterId, 'new_health', player.health);
+          // Remove the bullet
+          state.bullets.splice(bi, 1);
+
+          // Handle player death
+          if (player.health <= 0) {
+            // Update in-memory stats
+            if (!state.players[bullet.shooterId]) state.players[bullet.shooterId] = { kills: 0, deaths: 0, health: 100, position: { x: 100, y: 100 }, rotation: 0 };
+            state.players[bullet.shooterId].kills = (state.players[bullet.shooterId].kills || 0) + 1;
+            player.deaths = (player.deaths || 0) + 1;
+
+            // Broadcast kill event to lobby
+            broadcast(lobbyId, {
+              type: 'kill',
+              killerId: bullet.shooterId,
+              victimId: pid,
+              timestamp: Date.now()
+            });
+
+            // Respawn player (reset health and random position)
+            player.health = 100;
+            player.position = { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 };
+          }
+
+          // Bullet handled, stop checking other players for this bullet
+          break;
+        }
+      }
+    }
+    // Remove bullets after 2 seconds (lifetime)
+    state.bullets = state.bullets.filter(bullet => now - bullet.createdAt < 2000);
+    // Broadcast updated state to all clients
+    broadcast(lobbyId, {
+      type: 'game_state',
+      state,
+      timestamp: Date.now()
+    });
+
+    // Also immediately broadcast state after collision handling so clients see authoritative health/positions
+    broadcast(lobbyId, {
+      type: 'game_state',
+      state,
+      timestamp: Date.now()
+    });
+  }
+}, TICK_RATE);
 
 async function handleKill(message, lobbyId) {
   const { killerId, victimId, sessionId } = message;
 
+  // Debug: log incoming kill payload and socket mapping
+  console.log('[gameServer] handleKill called with:', { killerId, victimId, sessionId, lobbyId });
+  console.log('[gameServer] userSockets has killerId?', userSockets.has(killerId));
+
   try {
+    // Minimal server-side verification to avoid obvious spoofing:
+    // Verify there exists a recent bullet in the authoritative game state
+    // that was fired by the claimed killer and is close to the victim's server position.
+    const MAX_BULLET_AGE_MS = 500; // how old a bullet may be and still considered valid
+    const MAX_HIT_DISTANCE = 48; // pixels (tweak as needed for your game scale)
+
+    if (!lobbyId || !gameStates.has(lobbyId)) {
+      console.log('[gameServer] handleKill: no game state for lobby', lobbyId);
+      return; // ignore invalid report
+    }
+
+    const state = gameStates.get(lobbyId);
+    if (!state.players || !state.players[victimId]) {
+      console.log('[gameServer] handleKill: victim not found in state', victimId);
+      return;
+    }
+
+    const victimPos = state.players[victimId].position;
+    const now = Date.now();
+
+    // Find a matching bullet
+    const matchingBullet = (state.bullets || []).find(b => {
+      try {
+        if (b.shooterId != killerId) return false;
+        if (!b.position || typeof b.createdAt !== 'number') return false;
+        if (now - b.createdAt > MAX_BULLET_AGE_MS) return false;
+        const dx = (b.position.x || 0) - (victimPos.x || 0);
+        const dy = (b.position.y || 0) - (victimPos.y || 0);
+        const dist2 = dx * dx + dy * dy;
+        return dist2 <= (MAX_HIT_DISTANCE * MAX_HIT_DISTANCE);
+      } catch (e) {
+        return false;
+      }
+    });
+
+    if (!matchingBullet) {
+      console.log('[gameServer] handleKill: no matching bullet found — rejecting kill report', { killerId, victimId, lobbyId });
+      return; // reject the kill report silently
+    }
+
     // Update game participants
     await pool.query(
       'UPDATE game_participants SET kills = kills + 1 WHERE session_id = $1 AND user_id = $2',

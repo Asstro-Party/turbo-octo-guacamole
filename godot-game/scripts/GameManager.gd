@@ -3,10 +3,12 @@ extends Node
 # Manages the game state and players
 @export var player_scene: PackedScene
 
+
 var players = {}
+var bullets = {}
 var local_player_id = 0
 var session_id = 0
-var player_models: Dictionary = {}
+
 
 @onready var network_manager = $NetworkManager
 @onready var players_container = $Players
@@ -15,12 +17,9 @@ func _ready():
 	# Connect to network manager signals
 	network_manager.player_joined.connect(_on_player_joined)
 	network_manager.game_started.connect(_on_game_started)
-	network_manager.player_action_received.connect(_on_player_action_received)
+	network_manager.game_state_received.connect(_on_game_state_received)
 	network_manager.kill_received.connect(_on_kill_received)
 	network_manager.game_ended.connect(_on_game_ended)
-	network_manager.player_model_state_received.connect(_on_player_model_state_received)
-	network_manager.player_model_selected.connect(_on_player_model_selected)
-	network_manager.player_left_lobby.connect(_on_player_left_lobby)
 
 	# Get game info from URL parameters (when embedded in web page)
 	if OS.has_feature("web"):
@@ -32,38 +31,14 @@ func _ready():
 		spawn_player(1, "TestPlayer", true)
 
 func _setup_from_web_params():
-	var lobby_id = ""
-	var user_id = 0
-	var username = "Player"
-	var model_name = ""
-
-	if JavaScriptBridge:
-		lobby_id = str(JavaScriptBridge.eval("window.godotConfig?.lobbyId || ''"))
-		user_id = int(JavaScriptBridge.eval("window.godotConfig?.userId || '0'"))
-		username = str(JavaScriptBridge.eval("window.godotConfig?.username || 'Player'"))
-		model_name = str(JavaScriptBridge.eval("window.godotConfig?.playerModel || ''"))
-
-	var invalid_tokens = ["null", "undefined"]
-	if invalid_tokens.has(lobby_id):
-		lobby_id = ""
-	if invalid_tokens.has(username):
-		username = "Player"
-	if invalid_tokens.has(model_name):
-		model_name = ""
-
-	if lobby_id.is_empty() or user_id == 0:
-		print("Missing lobby or user info from web parameters. Spawning local test player.")
-		local_player_id = 1
-		spawn_player(local_player_id, "WebTest", true)
-		return
+	# This would be called with actual parameters from the web page
+	# For now, using randomized values for local/editor testing
+	var lobby_id = "test-lobby"
+	var user_id = randi() % 10000 + 1
+	var username = "Player" + str(user_id)
 
 	network_manager.connect_to_server(lobby_id, user_id, username)
 	local_player_id = user_id
-	if model_name != "":
-		player_models[str(user_id)] = model_name
-
-	# Spawn local player
-	spawn_player(user_id, username, true)
 
 func spawn_player(player_id: int, username: String, is_local: bool):
 	if players.has(player_id):
@@ -79,12 +54,11 @@ func spawn_player(player_id: int, username: String, is_local: bool):
 	player.position = _get_spawn_position(players.size())
 
 	# Connect signals
-	player.player_died.connect(_on_player_died.bind(player_id))
+	# Connect directly so the signal provides (killer_id, victim_id)
+	player.player_died.connect(_on_player_died)
 
 	players_container.add_child(player)
 	players[player_id] = player
-
-	_apply_player_model(player_id)
 
 	print("Spawned player: ", username, " (", player_id, ")")
 
@@ -110,9 +84,91 @@ func _on_game_started():
 		player.deaths = 0
 		player.health = 100
 
-func _on_player_action_received(user_id: int, action: String, data: Dictionary):
-	if players.has(user_id) and user_id != local_player_id:
-		players[user_id].apply_remote_action(action, data)
+
+# Update all players from authoritative game state
+func _on_game_state_received(state: Dictionary):
+	if not state.has("players"):
+		return
+	print("[DEBUG] Server state for all players:")
+	var server_player_ids = []
+	for pid_str in state["players"].keys():
+		var pid = int(pid_str)
+		server_player_ids.append(pid)
+		var pdata = state["players"][pid_str]
+		print("  Player ", pid, ": pos=", pdata["position"], ", rot=", pdata["rotation"])
+		if not players.has(pid):
+			spawn_player(pid, pdata.get("username", "Player" + str(pid)), pid == local_player_id)
+		var player = players[pid]
+		player.position = Vector2(pdata["position"]["x"], pdata["position"]["y"])
+		player.rotation = pdata["rotation"]
+		player.health = pdata.get("health", 100)
+		player.kills = pdata.get("kills", 0)
+		player.deaths = pdata.get("deaths", 0)
+
+	# --- Bullet sync ---
+	if state.has("bullets"):
+		var server_bullets = state["bullets"]
+		# Debug: log incoming bullets count
+		print("[GameManager] Received server bullets count:", server_bullets.size())
+		var server_bullet_ids = []
+		for bullet_data in server_bullets:
+			var bid = bullet_data["id"]
+			# Debug: log each bullet id briefly
+			print("[GameManager] bullet id:", bid, "shooter:", bullet_data.get("shooterId"))
+			server_bullet_ids.append(bid)
+			if not bullets.has(bid):
+				var bullet_scene = preload("res://scenes/bullet.tscn")
+				var bullet = bullet_scene.instantiate()
+				bullet.position = Vector2(bullet_data["position"]["x"], bullet_data["position"]["y"]) 
+				bullet.rotation = bullet_data["rotation"]
+				bullet.shooter_id = bullet_data["shooterId"]
+				bullets[bid] = bullet
+				players_container.add_child(bullet)
+			else:
+				var bullet = bullets[bid]
+				# The node may have been freed (e.g. bullet timed out and called queue_free()).
+				if not is_instance_valid(bullet):
+					# Debug: node was freed - recreate and log
+					print("[GameManager] Recreating freed bullet node for id:", bid)
+					bullets.erase(bid)
+					var bullet_scene = preload("res://scenes/bullet.tscn")
+					var new_bullet = bullet_scene.instantiate()
+					new_bullet.position = Vector2(bullet_data["position"]["x"], bullet_data["position"]["y"]) 
+					new_bullet.rotation = bullet_data["rotation"]
+					new_bullet.shooter_id = bullet_data["shooterId"]
+					bullets[bid] = new_bullet
+					players_container.add_child(new_bullet)
+				else:
+					bullet.position = Vector2(bullet_data["position"]["x"], bullet_data["position"]["y"])
+					bullet.rotation = bullet_data["rotation"]
+		# Remove bullets that no longer exist on server
+		var to_remove = []
+		for local_bid in bullets.keys():
+			if not server_bullet_ids.has(local_bid):
+				to_remove.append(local_bid)
+		for remove_bid in to_remove:
+			var node = bullets[remove_bid]
+			if is_instance_valid(node):
+				print("[GameManager] Removing bullet node for id:", remove_bid)
+				if node.get_parent():
+					node.get_parent().remove_child(node)
+				node.queue_free()
+			# Remove reference from map regardless
+			bullets.erase(remove_bid)
+
+	# Remove local player nodes that are not in the server state
+	var to_remove = []
+	for local_pid in players.keys():
+		if not server_player_ids.has(local_pid):
+			to_remove.append(local_pid)
+	for remove_pid in to_remove:
+		var node = players[remove_pid]
+		if is_instance_valid(node):
+			print("[GameManager] Removing player node for id:", remove_pid)
+			if node.get_parent():
+				node.get_parent().remove_child(node)
+			node.queue_free()
+		players.erase(remove_pid)
 
 func _on_kill_received(killer_id: int, victim_id: int):
 	print("Kill: ", killer_id, " killed ", victim_id)
@@ -124,39 +180,12 @@ func _on_kill_received(killer_id: int, victim_id: int):
 		players[victim_id].deaths += 1
 
 func _on_player_died(killer_id: int, victim_id: int):
-	# Send kill event to server (only from local player)
-	if victim_id == local_player_id:
-		network_manager.send_kill(victim_id, session_id)
+	# Send kill event to server only if this client is the killer
+	# Use a payload of (killer_id, victim_id, session_id)
+	if killer_id == local_player_id:
+		network_manager.send_kill(killer_id, victim_id, session_id)
 
 func _on_game_ended(results: Array):
 	print("Game ended! Results: ", results)
 	# Show end game screen
 	# Return to lobby after delay
-
-func _on_player_model_state_received(models: Dictionary):
-	player_models = models.duplicate(true)
-	for player_id in players.keys():
-		_apply_player_model(player_id)
-
-func _on_player_model_selected(user_id: int, model: String, models: Dictionary):
-	if models:
-		player_models = models.duplicate(true)
-	else:
-		player_models[str(user_id)] = model
-	_apply_player_model(user_id)
-
-func _on_player_left_lobby(user_id: int, model: String):
-	player_models.erase(str(user_id))
-	if players.has(user_id):
-		_apply_player_model(user_id)
-
-func _apply_player_model(player_id: int):
-	if not players.has(player_id):
-		return
-
-	var key = str(player_id)
-	var model_name = player_models.get(key, "")
-	if model_name == null:
-		model_name = ""
-
-	players[player_id].set_player_model(model_name)

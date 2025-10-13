@@ -44,27 +44,26 @@ func setup(p_player_id: int, p_is_local: bool, p_network_manager = null):
 func _physics_process(delta):
 	if is_local_player:
 		_handle_local_input(delta)
-	move_and_slide()
-	var wrapped = _wrap_position()
-	if is_local_player:
+		# local shooting and cooldown handled here for responsiveness
 		_update_shooting(delta)
-		if wrapped and network_manager:
-			network_manager.send_player_action("move", {
-				"position": {"x": position.x, "y": position.y},
-				"rotation": rotation,
-				"velocity": {"x": velocity.x, "y": velocity.y}
-			})
+
+	# Do not call move_and_slide(): movement/position is authoritative from the server
+	# Keep client-side wrapping so the viewport remains consistent visually
+	var wrapped = _wrap_position()
 
 func _handle_local_input(delta):
-	# Movement
+	# Movement input
 	var input_vector = Vector2.ZERO
 	input_vector.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
 	input_vector.y = Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
 	input_vector = input_vector.normalized()
 
-	velocity = input_vector * speed
+	var input_dict = {}
+	input_dict["move"] = {"x": input_vector.x, "y": input_vector.y}
+	input_dict["rotation"] = input_vector.angle() if input_vector.length() > 0 else rotation
+	# Optionally, add shoot or other actions here
 
-	# Rotation - rotate to face movement direction
+	# Rotation - rotate to face movement direction (client-side smoothing)
 	var previous_rotation = rotation
 	if input_vector.length() > 0:
 		var target_rotation = input_vector.angle()
@@ -79,13 +78,11 @@ func _handle_local_input(delta):
 	# var mouse_pos = get_global_mouse_position()
 	# look_at(mouse_pos)
 
-	# Send position update to server
-	if network_manager and (velocity.length() > 0 or not is_equal_approx(previous_rotation, rotation)):
-		network_manager.send_player_action("move", {
-			"position": {"x": position.x, "y": position.y},
-			"rotation": rotation,
-			"velocity": {"x": velocity.x, "y": velocity.y}
-		})
+	# Send input to server (server will authoritatively update position/rotation)
+	if network_manager:
+		network_manager.send_player_input(input_dict)
+		# Debug: print sent input
+		# print("Sent input: ", input_dict)
 
 func _input(event):
 	if not is_local_player:
@@ -96,49 +93,35 @@ func _input(event):
 		shoot()
 
 func shoot():
+	# enforce client-side cooldown for input rate-limiting
+	if _shoot_cooldown > 0.0:
+		return
+
 	_shoot_cooldown = fire_rate
 
-	if bullet_scene:
-		var muzzle_position = global_position
-		if gun:
-			muzzle_position = gun.global_position
-		var bullet = bullet_scene.instantiate()
-		bullet.position = muzzle_position
-		bullet.rotation = rotation
-		bullet.shooter_id = player_id
-		get_parent().add_child(bullet)
+	# compute muzzle position for input payload (don't spawn bullet locally)
+	var muzzle_position = global_position
+	if gun:
+		muzzle_position = gun.global_position
 
-		player_shot.emit()
-
-		# Send shoot action to server
-		if network_manager:
-			network_manager.send_player_action("shoot", {
+	if network_manager:
+		network_manager.send_player_input({
+			"shoot": {
 				"position": {"x": muzzle_position.x, "y": muzzle_position.y},
 				"rotation": rotation
-			})
+			}
+		})
+	player_shot.emit()
 
 func apply_remote_action(action: String, data: Dictionary):
-	# Apply actions from other players
-	match action:
-		"move":
-			if data.has("position"):
-				position = Vector2(data.position.x, data.position.y)
-			if data.has("rotation"):
-				rotation = data.rotation
-			if data.has("velocity"):
-				velocity = Vector2(data.velocity.x, data.velocity.y)
-
-		"shoot":
-			if bullet_scene and data.has("position"):
-				var bullet = bullet_scene.instantiate()
-				bullet.position = Vector2(data.position.x, data.position.y)
-				bullet.rotation = data.rotation
-				bullet.shooter_id = player_id
-				get_parent().add_child(bullet)
+	pass # No longer used; state is set by GameManager from server
 
 func take_damage(damage: int, attacker_id: int):
 	health -= damage
+	# Debug: log damage received
+	print("[Player] take_damage from:", attacker_id, "new_health:", health, "player_id:", player_id)
 	if health <= 0:
+		print("[Player] died: player_id:", player_id, "killer_id:", attacker_id)
 		die(attacker_id)
 
 func die(killer_id: int):

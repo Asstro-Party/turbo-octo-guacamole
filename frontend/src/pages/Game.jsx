@@ -234,6 +234,17 @@ function Game({ user, token }) {
           <strong className="font-semibold text-slate-100">Controls:</strong> WASD to move, Mouse to aim, Click to shoot
         </p>
       </div>
+
+      <div className="game-container">
+        {/* Godot game will be embedded here */}
+        <iframe
+          id="godot-game"
+          src={`/godot-game/index.html?lobbyId=${encodeURIComponent(lobbyId)}&userId=${encodeURIComponent(user.id)}&username=${encodeURIComponent(user.username)}`}
+          title="Astro Party Game"
+          className="godot-iframe"
+          allow="autoplay; microphone"
+        />
+      </div>
     </SpaceBackground>
   );
 }
