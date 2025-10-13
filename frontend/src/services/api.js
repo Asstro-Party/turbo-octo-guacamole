@@ -36,6 +36,9 @@ export const getGames = (limit = 10) =>
   api.get(`/profile/games?limit=${limit}`);
 
 // Lobby
+export const getCurrentLobby = () =>
+  api.get('/lobby/current');
+
 export const getLobbies = () =>
   api.get('/lobby/list');
 
@@ -50,5 +53,8 @@ export const leaveLobby = (lobbyId) =>
 
 export const getLobby = (lobbyId) =>
   api.get(`/lobby/${lobbyId}`);
+
+export const selectPlayerModel = (lobbyId, model) =>
+  api.post(`/lobby/${lobbyId}/select-model`, { model });
 
 export default api;

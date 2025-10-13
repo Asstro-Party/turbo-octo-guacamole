@@ -25,6 +25,7 @@ export async function createLobby(lobbyId, hostUserId, maxPlayers = 4) {
     maxPlayers,
     currentPlayers: 1,
     players: [hostUserId],
+    playerModels: { [hostUserId]: null },
     status: 'waiting',
     createdAt: Date.now()
   };

@@ -2,8 +2,13 @@ extends CharacterBody2D
 
 # Player movement and shooting
 @export var speed = 300.0
-@export var rotation_speed = 3.0
+@export var rotation_speed = 10.0
 @export var bullet_scene: PackedScene
+@export var fire_rate := 0.15
+@export var player_color: Color = Color.WHITE
+@export var player_model: String = ""
+
+const PLAYER_TEXTURE_DIR := "res://assets/players/"
 
 var player_id = 0
 var is_local_player = false
@@ -11,6 +16,8 @@ var health = 100
 var kills = 0
 var deaths = 0
 var network_manager = null
+var _shoot_cooldown := 0.0
+var _default_texture: Texture2D = null
 
 @onready var sprite = $Sprite2D if has_node("Sprite2D") else null
 @onready var gun = $Gun if has_node("Gun") else null
@@ -20,7 +27,11 @@ signal player_shot()
 
 func _ready():
 	# Set player color based on ID
-	modulate = _get_player_color(player_id)
+	modulate = player_color
+	if sprite:
+		_default_texture = sprite.texture
+	if player_model != "":
+		_apply_player_model(player_model)
 
 func setup(p_player_id: int, p_is_local: bool, p_network_manager = null):
 	player_id = p_player_id
@@ -97,11 +108,51 @@ func _get_random_spawn_position() -> Vector2:
 		randf_range(100, viewport_size.y - 100)
 	)
 
-func _get_player_color(id: int) -> Color:
-	var colors = [
-		Color(1, 0.3, 0.3),  # Red
-		Color(0.3, 0.3, 1),  # Blue
-		Color(0.3, 1, 0.3),  # Green
-		Color(1, 1, 0.3)     # Yellow
-	]
-	return colors[id % colors.size()]
+func _update_shooting(delta):
+	if _shoot_cooldown > 0.0:
+		_shoot_cooldown = max(_shoot_cooldown - delta, 0.0)
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _shoot_cooldown <= 0.0:
+		shoot()
+
+func _wrap_position() -> bool:
+	var viewport := get_viewport()
+	if viewport == null:
+		return false
+
+	var rect := viewport.get_visible_rect()
+	var min_x := rect.position.x
+	var max_x := rect.position.x + rect.size.x
+	var min_y := rect.position.y
+	var max_y := rect.position.y + rect.size.y
+
+	var new_x := wrapf(position.x, min_x, max_x)
+	var new_y := wrapf(position.y, min_y, max_y)
+
+	if !is_equal_approx(new_x, position.x) or !is_equal_approx(new_y, position.y):
+		position = Vector2(new_x, new_y)
+		return true
+
+	return false
+
+func set_player_model(model_name: String):
+	player_model = model_name
+	_apply_player_model(model_name)
+
+func _apply_player_model(model_name: String):
+	if sprite == null:
+		return
+
+	if model_name == null or model_name == "":
+		if _default_texture:
+			sprite.texture = _default_texture
+		return
+
+	var path = PLAYER_TEXTURE_DIR + model_name
+	if ResourceLoader.exists(path):
+		var texture = load(path)
+		if texture:
+			sprite.texture = texture
+			return
+
+	if _default_texture:
+		sprite.texture = _default_texture

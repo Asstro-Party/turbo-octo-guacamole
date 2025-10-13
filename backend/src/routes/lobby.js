@@ -9,9 +9,30 @@ import {
   getActiveLobbies
 } from '../config/redis.js';
 import { authenticate } from '../middleware/auth.js';
-import { broadcastLobbyListUpdate } from '../websocket/gameServer.js';
+import { broadcastLobbyListUpdate, broadcast } from '../websocket/gameServer.js';
 
 const router = express.Router();
+const AVAILABLE_PLAYER_MODELS = ['player1.png', 'player2.png', 'player3.png', 'player4.png'];
+
+// Get user's current active lobby
+router.get('/current', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const lobbies = await getActiveLobbies();
+
+    // Find any lobby where the user is a player
+    const userLobby = lobbies.find(l => l.players.includes(userId));
+
+    if (userLobby) {
+      res.json({ lobbyId: userLobby.lobbyId, lobby: userLobby });
+    } else {
+      res.json({ lobbyId: null });
+    }
+  } catch (error) {
+    console.error('Get current lobby error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // Get all active lobbies (server browser)
 router.get('/list', authenticate, async (req, res) => {
@@ -53,11 +74,8 @@ router.post('/create', authenticate, async (req, res) => {
       [lobbyId, userId, maxPlayers, 1]
     );
 
-    // Broadcast updated lobby list
+    res.status(201).json(lobby);
     broadcastLobbyListUpdate();
-
-  res.status(201).json(lobby);
-  broadcastLobbyListUpdate();
 
   } catch (error) {
     console.error('Create lobby error:', error);
@@ -92,6 +110,13 @@ router.post('/:lobbyId/join', authenticate, async (req, res) => {
     // Update lobby
     lobby.players.push(userId);
     lobby.currentPlayers++;
+    if (!lobby.playerModels) {
+      lobby.playerModels = {};
+    }
+    const userKey = String(userId);
+    if (!(userKey in lobby.playerModels)) {
+      lobby.playerModels[userKey] = null;
+    }
     await updateLobby(lobbyId, lobby);
 
     // Update database
@@ -100,14 +125,63 @@ router.post('/:lobbyId/join', authenticate, async (req, res) => {
       [lobby.currentPlayers, lobbyId]
     );
 
-    // Broadcast updated lobby list
+    res.json(lobby);
     broadcastLobbyListUpdate();
-
-  res.json(lobby);
-  broadcastLobbyListUpdate();
 
   } catch (error) {
     console.error('Join lobby error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Select player model
+router.post('/:lobbyId/select-model', authenticate, async (req, res) => {
+  try {
+    const { lobbyId } = req.params;
+    const { model } = req.body;
+    const userId = req.user.id;
+
+    if (!model || !AVAILABLE_PLAYER_MODELS.includes(model)) {
+      return res.status(400).json({ error: 'Invalid player model selection' });
+    }
+
+    const lobby = await getLobby(lobbyId);
+    if (!lobby) {
+      return res.status(404).json({ error: 'Lobby not found' });
+    }
+
+    if (!lobby.players.includes(userId)) {
+      return res.status(403).json({ error: 'You are not part of this lobby' });
+    }
+
+    if (!lobby.playerModels) {
+      lobby.playerModels = {};
+    }
+
+    const userKey = String(userId);
+    const isTaken = Object.entries(lobby.playerModels).some(
+      ([pid, selected]) => selected === model && pid !== userKey
+    );
+
+    if (isTaken) {
+      return res.status(400).json({ error: 'Model already selected by another player' });
+    }
+
+    lobby.playerModels[userKey] = model;
+    await updateLobby(lobbyId, lobby);
+
+    broadcast(lobbyId, {
+      type: 'player_model_selected',
+      lobbyId,
+      userId,
+      model,
+      playerModels: lobby.playerModels
+    });
+
+    res.json({ playerModels: lobby.playerModels });
+
+  } catch (error) {
+    console.error('Select model error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -124,9 +198,15 @@ router.post('/:lobbyId/leave', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Lobby not found' });
     }
 
-  const oldPlayers = lobby.players.slice();
-  lobby.players = lobby.players.filter(id => id !== userId);
-  lobby.currentPlayers--;
+    const oldPlayers = lobby.players.slice();
+    const userKey = String(userId);
+    const freedModel = lobby.playerModels ? lobby.playerModels[userKey] : null;
+
+    lobby.players = lobby.players.filter(id => id !== userId);
+    lobby.currentPlayers--;
+    if (lobby.playerModels) {
+      delete lobby.playerModels[userKey];
+    }
 
     // If lobby is empty, delete it
     if (lobby.currentPlayers === 0) {
@@ -145,22 +225,18 @@ router.post('/:lobbyId/leave', authenticate, async (req, res) => {
     }
 
     // Notify all lobby members (except the leaver) in real time
-    try {
-      const { broadcast } = await import('../websocket/gameServer.js');
-      oldPlayers.filter(pid => pid !== userId).forEach(pid => {
-        broadcast(lobbyId, {
-          type: 'player_left',
-          userId,
-          lobbyId
-        });
+    const remainingPlayers = oldPlayers.filter(pid => pid !== userId);
+    if (remainingPlayers.length > 0) {
+      broadcast(lobbyId, {
+        type: 'player_left',
+        userId,
+        lobbyId,
+        model: freedModel
       });
-    } catch (e) { console.error('Failed to broadcast player_left', e); }
+    }
 
-    // Broadcast updated lobby list
+    res.json({ message: 'Left lobby successfully' });
     broadcastLobbyListUpdate();
-
-  res.json({ message: 'Left lobby successfully' });
-  broadcastLobbyListUpdate();
 
   } catch (error) {
     console.error('Leave lobby error:', error);

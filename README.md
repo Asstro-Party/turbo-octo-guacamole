@@ -53,8 +53,6 @@ If you haven't set up the project yet:
    docker-compose up -d
    ```
 
-See [SETUP.md](./SETUP.md) for detailed configuration.
-
 ## Tech Stack
 
 | Component | Technology |
@@ -121,24 +119,6 @@ turbo-octo-guacamole/
 └── docker-compose.yml    # PostgreSQL + Redis
 ```
 
-## API Documentation
-
-See [SETUP.md](./SETUP.md) for full API and WebSocket protocol documentation.
-
-## Development
-
-### Backend
-```bash
-cd backend
-npm run dev  # Nodemon auto-reload
-```
-
-### Frontend
-```bash
-cd frontend
-npm run dev  # Vite hot reload
-```
-
 ### Godot
 1. Open `godot-game/project.godot` in Godot 4.2+
 2. Make changes
@@ -147,18 +127,6 @@ npm run dev  # Vite hot reload
 
 ## Configuration Notes
 
-- **PostgreSQL Port:** 5433 (changed from default 5432 to avoid conflicts)
+- **PostgreSQL Port:** 5433
 - **WebSocket Port:** 3001
 - **Frontend Dev Server:** 5173
-
-## Resources
-
-- [SETUP.md](./SETUP.md) - Complete setup guide and API documentation
-- [ARCHITECTURE.md](./ARCHITECTURE.md) - System architecture and design
-- [VOICE_CHAT_IMPLEMENTATION.md](./VOICE_CHAT_IMPLEMENTATION.md) - WebRTC voice chat guide
-- [Godot Docs](https://docs.godotengine.org/)
-- [WebRTC Guide](https://webrtc.org/getting-started/overview)
-
-## License
-
-MIT License

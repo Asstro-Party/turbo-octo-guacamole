@@ -131,6 +131,19 @@ async function handleJoinGame(ws, message, wss) {
     username
   }, ws);
 
+  try {
+    const lobby = await getLobby(lobbyId);
+    if (lobby && lobby.playerModels) {
+      ws.send(JSON.stringify({
+        type: 'player_model_state',
+        lobbyId,
+        playerModels: lobby.playerModels
+      }));
+    }
+  } catch (error) {
+    console.error('Failed to send player model state:', error);
+  }
+
   console.log(`Player ${username} joined lobby ${lobbyId}`);
 }
 

@@ -20,6 +20,9 @@ func _ready():
 	network_manager.game_state_received.connect(_on_game_state_received)
 	network_manager.kill_received.connect(_on_kill_received)
 	network_manager.game_ended.connect(_on_game_ended)
+	network_manager.player_model_state_received.connect(_on_player_model_state_received)
+	network_manager.player_model_selected.connect(_on_player_model_selected)
+	network_manager.player_left_lobby.connect(_on_player_left_lobby)
 
 	# Get game info from URL parameters (when embedded in web page)
 	if OS.has_feature("web"):
@@ -53,6 +56,8 @@ func _setup_from_web_params():
 
 	network_manager.connect_to_server(lobby_id, user_id, username)
 	local_player_id = user_id
+	if model_name != "":
+		player_models[str(user_id)] = model_name
 
 func spawn_player(player_id: int, username: String, is_local: bool):
 	if players.has(player_id):
@@ -73,6 +78,8 @@ func spawn_player(player_id: int, username: String, is_local: bool):
 
 	players_container.add_child(player)
 	players[player_id] = player
+
+	_apply_player_model(player_id)
 
 	print("Spawned player: ", username, " (", player_id, ")")
 
@@ -203,3 +210,31 @@ func _on_game_ended(results: Array):
 	print("Game ended! Results: ", results)
 	# Show end game screen
 	# Return to lobby after delay
+
+func _on_player_model_state_received(models: Dictionary):
+	player_models = models.duplicate(true)
+	for player_id in players.keys():
+		_apply_player_model(player_id)
+
+func _on_player_model_selected(user_id: int, model: String, models: Dictionary):
+	if models:
+		player_models = models.duplicate(true)
+	else:
+		player_models[str(user_id)] = model
+	_apply_player_model(user_id)
+
+func _on_player_left_lobby(user_id: int, model: String):
+	player_models.erase(str(user_id))
+	if players.has(user_id):
+		_apply_player_model(user_id)
+
+func _apply_player_model(player_id: int):
+	if not players.has(player_id):
+		return
+
+	var key = str(player_id)
+	var model_name = player_models.get(key, "")
+	if model_name == null:
+		model_name = ""
+
+	players[player_id].set_player_model(model_name)

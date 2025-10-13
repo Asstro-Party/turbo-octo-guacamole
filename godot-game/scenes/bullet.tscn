@@ -1,23 +1,19 @@
-[gd_scene load_steps=5 format=3 uid="uid://qmqkq6xamyaw"]
+[gd_scene load_steps=4 format=3 uid="uid://qmqkq6xamyaw"]
 
 [ext_resource type="Script" uid="uid://dphcsl3fq1hrv" path="res://scripts/Bullet.gd" id="1_mkf8s"]
-
-[sub_resource type="Gradient" id="Gradient_y25gk"]
-colors = PackedColorArray(0.790404, 0.427332, 1.92523e-07, 1, 1, 1, 0, 1)
-
-[sub_resource type="GradientTexture2D" id="GradientTexture2D_l5glv"]
-gradient = SubResource("Gradient_y25gk")
-width = 10
-height = 4
+[ext_resource type="Texture2D" uid="uid://cgouskhn3teyb" path="res://assets/sprites/poop.png" id="2_y25gk"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_eoqba"]
-size = Vector2(10, 4)
+size = Vector2(10, 12)
 
 [node name="Bullet" type="Area2D"]
 script = ExtResource("1_mkf8s")
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
-texture = SubResource("GradientTexture2D_l5glv")
+position = Vector2(5.9604645e-08, 0)
+rotation = -1.5715951
+scale = Vector2(0.028692467, 0.028692467)
+texture = ExtResource("2_y25gk")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = SubResource("RectangleShape2D_eoqba")

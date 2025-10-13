@@ -13,6 +13,9 @@ signal game_started()
 signal game_state_received(state)
 signal kill_received(killer_id, victim_id)
 signal game_ended(results)
+signal player_model_state_received(player_models)
+signal player_model_selected(user_id, model, player_models)
+signal player_left_lobby(user_id, model)
 
 var lobby_id = ""
 var user_id = 0
@@ -26,6 +29,7 @@ func _ready():
 		window.godotConfig.lobbyId = new URLSearchParams(window.location.search).get('lobbyId') || '';
 		window.godotConfig.userId = new URLSearchParams(window.location.search).get('userId') || '0';
 		window.godotConfig.username = new URLSearchParams(window.location.search).get('username') || 'Player';
+		window.godotConfig.playerModel = new URLSearchParams(window.location.search).get('playerModel') || '';
 		"""
 		JavaScriptBridge.eval(js_code)
 
@@ -87,6 +91,22 @@ func _handle_message(data: Dictionary):
 				kill_received.emit(data.get("killerId"), data.get("victimId"))
 			"game_ended":
 				game_ended.emit(data.get("results"))
+
+		"player_model_state":
+			player_model_state_received.emit(data.get("playerModels", {}))
+
+		"player_model_selected":
+			player_model_selected.emit(
+				data.get("userId"),
+				data.get("model"),
+				data.get("playerModels", {})
+			)
+
+		"player_left":
+			player_left_lobby.emit(
+				data.get("userId"),
+				data.get("model")
+			)
 
 func send_message(message: Dictionary):
 	if connected:
