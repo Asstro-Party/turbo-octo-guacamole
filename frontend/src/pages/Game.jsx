@@ -211,7 +211,8 @@ function Game({ user, token }) {
             </button>
           </div>
         </div>
-      </div>
+      </header>
+      
 
 
       <div className="game-container">
