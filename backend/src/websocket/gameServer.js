@@ -3,7 +3,7 @@ const gameStates = new Map(); // lobbyId -> { players: { [userId]: { ... } }, bu
 const playerInputs = new Map(); // lobbyId -> { [userId]: latestInput }
 
 // Game loop interval (ms)
-const TICK_RATE = 16; // ~60 times per second (60 FPS)
+const TICK_RATE = 8; // ~60 times per second (60 FPS)
 import { getLobby, updateLobby } from '../config/redis.js';
 import pool from '../config/database.js';
 

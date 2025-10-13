@@ -87,6 +87,7 @@ animations = [{
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
 sprite_frames = SubResource("SpriteFrames_a8y0u")
+autoplay = "default"
 centered = false
 
 [node name="Arena" type="Node2D" parent="."]
