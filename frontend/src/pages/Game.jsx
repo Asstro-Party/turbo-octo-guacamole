@@ -212,21 +212,18 @@ function Game({ user, token }) {
           </div>
         </div>
       </header>
+      
 
-      <div className="w-full max-w-6xl rounded-3xl border border-white/10 bg-slate-900/25 p-4 shadow-glass-lg backdrop-blur-2xl sm:p-6">
-        {loadingLobby ? (
-          <div className="flex h-[420px] items-center justify-center rounded-2xl border border-white/10 bg-slate-900/40 text-sm uppercase tracking-[0.3em] text-slate-300/70">
-            Loading game...
-          </div>
-        ) : (
-          <iframe
-            key={iframeSrc}
-            id="godot-game"
-            src={iframeSrc}
-            title="Astro Party Game"
-            className="h-[420px] w-full rounded-2xl border border-white/10 bg-slate-950 shadow-inner shadow-black/40 md:h-[520px] lg:h-[640px]"
-          />
-        )}
+
+      <div className="game-container">
+        {/* Godot game will be embedded here */}
+        <iframe
+          id="godot-game"
+          src={`/godot-game/index.html?lobbyId=${encodeURIComponent(lobbyId)}&userId=${encodeURIComponent(user.id)}&username=${encodeURIComponent(user.username)}`}
+          title="Astro Party Game"
+          className="godot-iframe"
+          allow="autoplay; microphone"
+        />
       </div>
 
       <div className="w-full max-w-6xl rounded-3xl border border-white/10 bg-slate-900/25 px-6 py-4 text-center text-xs uppercase tracking-[0.3em] text-slate-300/75 shadow-glass-lg backdrop-blur-2xl">
