@@ -114,13 +114,12 @@ func _on_game_started():
 func _on_game_state_received(state: Dictionary):
 	if not state.has("players"):
 		return
-	print("[DEBUG] Server state for all players:")
+	# Removed excessive debug logging for performance
 	var server_player_ids = []
 	for pid_str in state["players"].keys():
 		var pid = int(pid_str)
 		server_player_ids.append(pid)
 		var pdata = state["players"][pid_str]
-		print("  Player ", pid, ": pos=", pdata["position"], ", rot=", pdata["rotation"])
 		if not players.has(pid):
 			spawn_player(pid, pdata.get("username", "Player" + str(pid)), pid == local_player_id)
 		var player = players[pid]
@@ -133,13 +132,9 @@ func _on_game_state_received(state: Dictionary):
 	# --- Bullet sync ---
 	if state.has("bullets"):
 		var server_bullets = state["bullets"]
-		# Debug: log incoming bullets count
-		print("[GameManager] Received server bullets count:", server_bullets.size())
 		var server_bullet_ids = []
 		for bullet_data in server_bullets:
 			var bid = bullet_data["id"]
-			# Debug: log each bullet id briefly
-			print("[GameManager] bullet id:", bid, "shooter:", bullet_data.get("shooterId"))
 			server_bullet_ids.append(bid)
 			if not bullets.has(bid):
 				var bullet_scene = preload("res://scenes/bullet.tscn")
@@ -153,12 +148,11 @@ func _on_game_state_received(state: Dictionary):
 				var bullet = bullets[bid]
 				# The node may have been freed (e.g. bullet timed out and called queue_free()).
 				if not is_instance_valid(bullet):
-					# Debug: node was freed - recreate and log
-					print("[GameManager] Recreating freed bullet node for id:", bid)
+					# Recreate bullet without logging for performance
 					bullets.erase(bid)
 					var bullet_scene = preload("res://scenes/bullet.tscn")
 					var new_bullet = bullet_scene.instantiate()
-					new_bullet.position = Vector2(bullet_data["position"]["x"], bullet_data["position"]["y"]) 
+					new_bullet.position = Vector2(bullet_data["position"]["x"], bullet_data["position"]["y"])
 					new_bullet.rotation = bullet_data["rotation"]
 					new_bullet.shooter_id = bullet_data["shooterId"]
 					bullets[bid] = new_bullet
@@ -174,11 +168,9 @@ func _on_game_state_received(state: Dictionary):
 		for remove_bid in to_remove:
 			var node = bullets[remove_bid]
 			if is_instance_valid(node):
-				print("[GameManager] Removing bullet node for id:", remove_bid)
 				if node.get_parent():
 					node.get_parent().remove_child(node)
 				node.queue_free()
-			# Remove reference from map regardless
 			bullets.erase(remove_bid)
 
 	# Remove local player nodes that are not in the server state
@@ -189,14 +181,13 @@ func _on_game_state_received(state: Dictionary):
 	for remove_pid in to_remove:
 		var node = players[remove_pid]
 		if is_instance_valid(node):
-			print("[GameManager] Removing player node for id:", remove_pid)
 			if node.get_parent():
 				node.get_parent().remove_child(node)
 			node.queue_free()
 		players.erase(remove_pid)
 
 func _on_kill_received(killer_id: int, victim_id: int):
-	print("Kill: ", killer_id, " killed ", victim_id)
+	# Removed logging for performance
 
 	if players.has(killer_id):
 		players[killer_id].kills += 1

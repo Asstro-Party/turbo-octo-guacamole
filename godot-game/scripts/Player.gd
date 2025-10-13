@@ -38,8 +38,6 @@ func setup(p_player_id: int, p_is_local: bool, p_network_manager = null):
 	is_local_player = p_is_local
 	network_manager = p_network_manager
 
-	print("[Player] setup called - player_id:", player_id, " is_local:", is_local_player, " has_network_manager:", network_manager != null)
-
 	# Disable input for non-local players
 	set_process_input(is_local_player)
 
@@ -97,6 +95,9 @@ func _handle_local_movement(delta):
 
 	move_and_slide()
 
+	# Wrap around screen edges
+	_wrap_position()
+
 func _input(event):
 	if not is_local_player:
 		return
@@ -140,10 +141,7 @@ func apply_remote_action(action: String, data: Dictionary):
 
 func take_damage(damage: int, attacker_id: int):
 	health -= damage
-	# Debug: log damage received
-	print("[Player] take_damage from:", attacker_id, "new_health:", health, "player_id:", player_id)
 	if health <= 0:
-		print("[Player] died: player_id:", player_id, "killer_id:", attacker_id)
 		die(attacker_id)
 
 func die(killer_id: int):

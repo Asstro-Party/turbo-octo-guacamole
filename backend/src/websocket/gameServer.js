@@ -3,7 +3,7 @@ const gameStates = new Map(); // lobbyId -> { players: { [userId]: { ... } }, bu
 const playerInputs = new Map(); // lobbyId -> { [userId]: latestInput }
 
 // Game loop interval (ms)
-const TICK_RATE = 50; // 20 times per second
+const TICK_RATE = 16; // ~60 times per second (60 FPS)
 import { getLobby, updateLobby } from '../config/redis.js';
 import pool from '../config/database.js';
 
@@ -199,6 +199,10 @@ function handlePlayerInput(ws, message, lobbyId) {
   }
 }
 
+// Game configuration
+const GAME_WIDTH = 1280;
+const GAME_HEIGHT = 720;
+
 // Main game loop for all lobbies
 setInterval(() => {
   for (const [lobbyId, state] of gameStates.entries()) {
@@ -214,6 +218,12 @@ setInterval(() => {
           player.velocity = input.move;
           player.position.x += player.velocity.x * (TICK_RATE / 1000) * player.speed;
           player.position.y += player.velocity.y * (TICK_RATE / 1000) * player.speed;
+
+          // Wrap around screen edges
+          if (player.position.x < 0) player.position.x += GAME_WIDTH;
+          if (player.position.x > GAME_WIDTH) player.position.x -= GAME_WIDTH;
+          if (player.position.y < 0) player.position.y += GAME_HEIGHT;
+          if (player.position.y > GAME_HEIGHT) player.position.y -= GAME_HEIGHT;
         }
         if (typeof input.rotation === 'number') {
           player.rotation = input.rotation;
@@ -223,11 +233,22 @@ setInterval(() => {
     // Update bullets
     const dt = TICK_RATE / 1000;
     const now = Date.now();
-    // Move bullets
-    for (const bullet of state.bullets) {
+    // Move bullets and remove those that go off-screen
+    state.bullets = state.bullets.filter(bullet => {
       bullet.position.x += bullet.velocity.x * dt;
       bullet.position.y += bullet.velocity.y * dt;
-    }
+
+      // Remove bullets that go off screen
+      if (bullet.position.x < 0 || bullet.position.x > GAME_WIDTH ||
+          bullet.position.y < 0 || bullet.position.y > GAME_HEIGHT) {
+        return false; // Remove bullet
+      }
+      // Also remove old bullets (lifetime check)
+      if (now - bullet.createdAt > 2000) {
+        return false;
+      }
+      return true; // Keep bullet
+    });
     // Server-side collision detection: check bullets against players and apply damage
     // Minimal authoritative hit detection to keep clients in sync.
     const HIT_RADIUS = 20; // pixels
@@ -275,16 +296,8 @@ setInterval(() => {
         }
       }
     }
-    // Remove bullets after 2 seconds (lifetime)
-    state.bullets = state.bullets.filter(bullet => now - bullet.createdAt < 2000);
-    // Broadcast updated state to all clients
-    broadcast(lobbyId, {
-      type: 'game_state',
-      state,
-      timestamp: Date.now()
-    });
-
-    // Also immediately broadcast state after collision handling so clients see authoritative health/positions
+    // Bullets are already filtered above (off-screen and lifetime check combined)
+    // Broadcast updated state to all clients (only once per tick)
     broadcast(lobbyId, {
       type: 'game_state',
       state,

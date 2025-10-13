@@ -76,11 +76,10 @@ func _on_connection_established():
 func _handle_message(data: Dictionary):
 	match data.get("type", ""):
 		"joined":
-			print("[NetworkManager] Successfully joined game - Players in lobby:", data.get("players", []))
+			print("[NetworkManager] Successfully joined game")
 			if data.has("players"):
 				for pid in data["players"]:
 					if int(pid) != user_id:
-						print("[NetworkManager] Emitting player_joined for pid:", pid)
 						player_joined.emit(int(pid), "Player" + str(pid))
 		"player_joined":
 			player_joined.emit(data.get("userId"), data.get("username"))
@@ -88,8 +87,7 @@ func _handle_message(data: Dictionary):
 			game_started.emit()
 		"game_state":
 			latest_game_state = data.get("state", {})
-			var player_count = latest_game_state.get("players", {}).size() if latest_game_state.has("players") else 0
-			print("[NetworkManager] Received game_state - ", player_count, " players")
+			# Removed per-tick logging for performance
 			game_state_received.emit(latest_game_state)
 		"kill":
 			kill_received.emit(data.get("killerId"), data.get("victimId"))
