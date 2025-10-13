@@ -17,3 +17,15 @@
     @apply box-border;
   }
 }
+
+@layer components {
+  .game-container {
+    @apply w-full max-w-6xl;
+  }
+
+  .godot-iframe {
+    @apply w-full rounded-3xl border border-white/10 bg-slate-900/50 shadow-glass-lg backdrop-blur-2xl;
+    height: 70vh;
+    min-height: 600px;
+  }
+}

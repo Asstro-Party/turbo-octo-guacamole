@@ -109,7 +109,9 @@ async function handleJoinGame(ws, message, wss) {
       velocity: { x: 0, y: 0 },
       health: 100,
       speed: 200,
-      username
+      username,
+      kills: 0,
+      deaths: 0
     };
   }
   // Get full player list for this lobby
@@ -143,6 +145,13 @@ async function handleJoinGame(ws, message, wss) {
   } catch (error) {
     console.error('Failed to send player model state:', error);
   }
+
+  // Immediately broadcast the current game state to all clients so everyone sees all players
+  broadcast(lobbyId, {
+    type: 'game_state',
+    state: gameStates.get(lobbyId),
+    timestamp: Date.now()
+  });
 
   console.log(`Player ${username} joined lobby ${lobbyId}`);
 }

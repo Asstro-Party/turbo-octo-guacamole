@@ -217,13 +217,15 @@ function Game({ user, token }) {
 
       <div className="game-container">
         {/* Godot game will be embedded here */}
-        <iframe
-          id="godot-game"
-          src={`/godot-game/index.html?lobbyId=${encodeURIComponent(lobbyId)}&userId=${encodeURIComponent(user.id)}&username=${encodeURIComponent(user.username)}`}
-          title="Astro Party Game"
-          className="godot-iframe"
-          allow="autoplay; microphone"
-        />
+        {!loadingLobby && (
+          <iframe
+            id="godot-game"
+            src={iframeSrc}
+            title="Astro Party Game"
+            className="godot-iframe"
+            allow="autoplay; microphone"
+          />
+        )}
       </div>
 
       <div className="w-full max-w-6xl rounded-3xl border border-white/10 bg-slate-900/25 px-6 py-4 text-center text-xs uppercase tracking-[0.3em] text-slate-300/75 shadow-glass-lg backdrop-blur-2xl">
