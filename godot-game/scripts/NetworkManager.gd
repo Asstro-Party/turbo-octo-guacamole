@@ -63,7 +63,7 @@ func _process(delta):
 			print("WebSocket connection closed")
 
 func _on_connection_established():
-	print("Connected to game server")
+	print("[NetworkManager] Connected to game server - lobbyId:", lobby_id, " userId:", user_id, " username:", username)
 	# Send join game message
 	send_message({
 		"type": "join_game",
@@ -71,37 +71,38 @@ func _on_connection_established():
 		"userId": user_id,
 		"username": username
 	})
+	print("[NetworkManager] Sent join_game message")
 
 func _handle_message(data: Dictionary):
-		match data.get("type", ""):
-			"joined":
-				print("Successfully joined game")
-				if data.has("players"):
-					for pid in data["players"]:
-						if int(pid) != user_id:
-							player_joined.emit(int(pid), "Player" + str(pid))
-			"player_joined":
-				player_joined.emit(data.get("userId"), data.get("username"))
-			"game_started":
-				game_started.emit()
-			"game_state":
-				latest_game_state = data.get("state", {})
-				game_state_received.emit(latest_game_state)
-			"kill":
-				kill_received.emit(data.get("killerId"), data.get("victimId"))
-			"game_ended":
-				game_ended.emit(data.get("results"))
-
+	match data.get("type", ""):
+		"joined":
+			print("[NetworkManager] Successfully joined game - Players in lobby:", data.get("players", []))
+			if data.has("players"):
+				for pid in data["players"]:
+					if int(pid) != user_id:
+						print("[NetworkManager] Emitting player_joined for pid:", pid)
+						player_joined.emit(int(pid), "Player" + str(pid))
+		"player_joined":
+			player_joined.emit(data.get("userId"), data.get("username"))
+		"game_started":
+			game_started.emit()
+		"game_state":
+			latest_game_state = data.get("state", {})
+			var player_count = latest_game_state.get("players", {}).size() if latest_game_state.has("players") else 0
+			print("[NetworkManager] Received game_state - ", player_count, " players")
+			game_state_received.emit(latest_game_state)
+		"kill":
+			kill_received.emit(data.get("killerId"), data.get("victimId"))
+		"game_ended":
+			game_ended.emit(data.get("results"))
 		"player_model_state":
 			player_model_state_received.emit(data.get("playerModels", {}))
-
 		"player_model_selected":
 			player_model_selected.emit(
 				data.get("userId"),
 				data.get("model"),
 				data.get("playerModels", {})
 			)
-
 		"player_left":
 			player_left_lobby.emit(
 				data.get("userId"),

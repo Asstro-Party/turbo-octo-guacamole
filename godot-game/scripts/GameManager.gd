@@ -8,6 +8,7 @@ var players = {}
 var bullets = {}
 var local_player_id = 0
 var session_id = 0
+var player_models = {}
 
 
 @onready var network_manager = $NetworkManager
@@ -39,6 +40,7 @@ func _setup_from_web_params():
 	var lobby_id = ""
 	var user_id = 0
 	var username = ""
+	var model_name = ""
 
 	# Use JavaScript to read the config values from the global window object
 	if OS.has_feature("web"):
@@ -46,7 +48,8 @@ func _setup_from_web_params():
 		# Ensure user_id is correctly converted to an integer
 		user_id = int(JavaScriptBridge.eval("window.godotConfig.userId"))
 		username = JavaScriptBridge.eval("window.godotConfig.username")
-	
+		model_name = JavaScriptBridge.eval("window.godotConfig.playerModel")
+
 	# Fallback/Debug check
 	if user_id == 0 or lobby_id == "":
 		print("Error: Could not retrieve valid web parameters. Falling back to test.")
@@ -56,8 +59,9 @@ func _setup_from_web_params():
 
 	network_manager.connect_to_server(lobby_id, user_id, username)
 	local_player_id = user_id
-	if model_name != "":
+	if model_name != null and model_name != "":
 		player_models[str(user_id)] = model_name
+		print("Local player model set to: ", model_name)
 
 func spawn_player(player_id: int, username: String, is_local: bool):
 	if players.has(player_id):
