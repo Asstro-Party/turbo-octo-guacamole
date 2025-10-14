@@ -233,9 +233,13 @@ function WaitingRoom({ user }) {
             <button
               className="rounded-2xl bg-gradient-to-r from-emerald-400 via-cyan-400 to-sky-500 px-6 py-3 text-[0.65rem] font-semibold uppercase tracking-[0.4em] text-slate-900 shadow-lg shadow-emerald-400/30 transition hover:-translate-y-0.5 hover:shadow-emerald-400/45 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               onClick={handleStartGame}
-              disabled={players.length < 2 || players.length > 4}
+              disabled={players.length < 2 || players.length > 4 || players.some(pid => !playerModels[String(pid)])}
             >
-              {players.length < 2 ? 'Need at least 2 players' : 'Start Game'}
+              {players.length < 2
+                ? 'Need at least 2 players'
+                : players.some(pid => !playerModels[String(pid)])
+                  ? 'All players must choose a model'
+                  : 'Start Game'}
             </button>
           ) : (
             <div className="rounded-2xl border border-white/10 bg-slate-900/60 px-5 py-3 text-center text-[0.65rem] uppercase tracking-[0.35em] text-slate-300/70">
