@@ -204,17 +204,18 @@ const GAME_WIDTH = 1280;
 const GAME_HEIGHT = 720;
 
 // Main game loop for all lobbies
+// Calculates new player positions, handles collisions, and broadcasts state
 setInterval(() => {
   for (const [lobbyId, state] of gameStates.entries()) {
     const inputs = playerInputs.get(lobbyId) || {};
     // Update each player's state based on their input
     for (const userId in state.players) {
       const input = inputs[userId];
+      const player = state.players[userId];
+
       if (input) {
-        // Example: input = { move: {x, y}, rotation, shoot }
-        // Update position, rotation, etc. (simple physics)
-        const player = state.players[userId];
-        if (input.move) {
+        // If there is movement input and it's not zero, update position
+        if (input.move && (input.move.x !== 0 || input.move.y !== 0)) {
           player.velocity = input.move;
           player.position.x += player.velocity.x * (TICK_RATE / 1000) * player.speed;
           player.position.y += player.velocity.y * (TICK_RATE / 1000) * player.speed;
@@ -224,10 +225,20 @@ setInterval(() => {
           if (player.position.x > GAME_WIDTH) player.position.x -= GAME_WIDTH;
           if (player.position.y < 0) player.position.y += GAME_HEIGHT;
           if (player.position.y > GAME_HEIGHT) player.position.y -= GAME_HEIGHT;
+        } else {
+          // No movement or stopped: rotate clockwise
+          const rotationSpeed = 2; // radians per second
+          player.rotation += rotationSpeed * (TICK_RATE / 1000);
         }
+
+        // If there is a rotation input, override rotation
         if (typeof input.rotation === 'number') {
           player.rotation = input.rotation;
         }
+      } else {
+        // No input at all: rotate clockwise
+        const rotationSpeed = 2; // radians per second
+        player.rotation += rotationSpeed * (TICK_RATE / 1000);
       }
     }
     // Update bullets

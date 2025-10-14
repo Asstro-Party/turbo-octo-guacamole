@@ -59,21 +59,22 @@ func _physics_process(delta):
 	# Do not move_and_slide() here; position is set by GameManager from server
 
 func _handle_local_input(delta):
-	# Movement input
-	var input_vector = Vector2.ZERO
-	input_vector.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
-	input_vector.y = Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
-	input_vector = input_vector.normalized()
+    # Movement input
+    var input_vector = Vector2.ZERO
+    input_vector.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
+    input_vector.y = Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
+    input_vector = input_vector.normalized()
 
-	var input_dict = {}
-	input_dict["move"] = {"x": input_vector.x, "y": input_vector.y}
-	input_dict["rotation"] = input_vector.angle() if input_vector.length() > 0 else rotation
-	# Optionally, add shoot or other actions here
+    var input_dict = {}
+    input_dict["move"] = {"x": input_vector.x, "y": input_vector.y}
+    if input_vector.length() > 0:
+        input_dict["rotation"] = input_vector.angle()
+    # Do NOT send rotation if not moving
 
-	if network_manager:
-		network_manager.send_player_input(input_dict)
-		# Debug: print sent input
-		# print("Sent input: ", input_dict)
+    if network_manager:
+        network_manager.send_player_input(input_dict)
+        # Debug: print sent input
+        # print("Sent input: ", input_dict)
 
 func _handle_local_movement(delta):
 	# Local movement fallback for testing without server

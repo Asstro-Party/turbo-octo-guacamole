@@ -47,7 +47,6 @@ move_right={
 
 [physics]
 
-common/physics_ticks_per_second=60
 common/physics_jitter_fix=0.0
 
 [rendering]
