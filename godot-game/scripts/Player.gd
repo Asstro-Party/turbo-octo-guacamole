@@ -4,7 +4,7 @@ extends CharacterBody2D
 @export var speed = 300.0
 @export var rotation_speed = 10.0
 @export var bullet_scene: PackedScene
-@export var fire_rate := 0.15
+@export var fire_rate := 0.30
 @export var player_color: Color = Color.WHITE
 @export var player_model: String = ""
 
@@ -47,10 +47,10 @@ func _physics_process(delta):
 		# For local testing without server (editor mode)
 		if not network_manager or not network_manager.connected:
 			_handle_local_movement(delta)
-		else:
-			# Multiplayer mode - handle shooting here
-			if Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-				shoot()
+		# else:
+		# 	# Multiplayer mode - handle shooting here
+		# 	if Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		# 		shoot()
 
 	# Update shoot cooldown
 	if _shoot_cooldown > 0.0:
@@ -90,10 +90,6 @@ func _handle_local_movement(delta):
 	else:
 		velocity = Vector2.ZERO
 
-	# Handle continuous shooting (hold to shoot) - spacebar or mouse
-	if Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		shoot()
-
 	move_and_slide()
 
 	# Wrap around screen edges
@@ -102,7 +98,12 @@ func _handle_local_movement(delta):
 func _input(event):
 	if not is_local_player:
 		return
-	# Shooting is now handled in _handle_local_movement() for continuous fire
+	# Handle shooting for spacebar
+	if event is InputEventKey and event.pressed and event.keycode == KEY_SPACE and not event.echo:
+		shoot()
+	# Handle shooting for mouse button (single click)
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		shoot()
 
 func shoot():
 	# Check cooldown
@@ -163,8 +164,6 @@ func _get_random_spawn_position() -> Vector2:
 func _update_shooting(delta):
 	if _shoot_cooldown > 0.0:
 		_shoot_cooldown = max(_shoot_cooldown - delta, 0.0)
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _shoot_cooldown <= 0.0:
-		shoot()
 
 func _wrap_position() -> bool:
 	var viewport := get_viewport()
