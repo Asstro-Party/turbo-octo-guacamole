@@ -55,6 +55,13 @@ function WaitingRoom({ user }) {
           setSelectionError('');
         }
       }
+      if (message.type === 'return_to_waiting') {
+        // Refresh lobby data when returning from game
+        loadLobby();
+        if (message.playerModels) {
+          setPlayerModels(message.playerModels);
+        }
+      }
     };
     wsRef.current = ws;
     return () => {

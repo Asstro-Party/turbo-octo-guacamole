@@ -49,6 +49,10 @@ export function setupWebSocketServer(wss) {
             await handleEndGame(message.lobbyId, message.results);
             break;
 
+          case 'host_return_to_waiting':
+            await handleHostReturnToWaiting(message.lobbyId, currentUserId);
+            break;
+
           default:
             console.log('Unknown message type:', message.type);
         }
@@ -58,9 +62,9 @@ export function setupWebSocketServer(wss) {
       }
     });
 
-    ws.on('close', () => {
+    ws.on('close', async () => {
       allClients.delete(ws);
-      console.log('WebSocket connection closed');
+      console.log('WebSocket connection closed for user:', currentUserId);
       if (currentLobbyId && connections.has(currentLobbyId)) {
         connections.get(currentLobbyId).delete(ws);
         if (connections.get(currentLobbyId).size === 0) {
@@ -68,7 +72,10 @@ export function setupWebSocketServer(wss) {
         }
       }
       if (currentUserId) {
-        userSockets.delete(currentUserId);
+        // Only delete from userSockets if this is actually their current socket
+        if (userSockets.get(currentUserId) === ws) {
+          userSockets.delete(currentUserId);
+        }
         // Remove player from server game state
         if (currentLobbyId && gameStates.has(currentLobbyId)) {
           const state = gameStates.get(currentLobbyId);
@@ -297,9 +304,15 @@ setInterval(() => {
               timestamp: Date.now()
             });
 
-            // Respawn player (reset health and random position)
-            player.health = 100;
-            player.position = { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 };
+            // Check for win condition (5 kills)
+            if (state.players[bullet.shooterId].kills >= 5) {
+              // Game over - someone won!
+              handleGameOver(lobbyId, bullet.shooterId);
+            } else {
+              // Respawn player (reset health and random position)
+              player.health = 100;
+              player.position = { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 };
+            }
           }
 
           // Bullet handled, stop checking other players for this bullet
@@ -432,6 +445,141 @@ async function handleStartGame(lobbyId) {
 
   } catch (error) {
     console.error('Start game error:', error);
+  }
+}
+
+async function handleGameOver(lobbyId, winnerId) {
+  try {
+    const state = gameStates.get(lobbyId);
+    if (!state) return;
+
+    // Prepare results array with player stats
+    const results = [];
+    const playerList = Object.keys(state.players);
+
+    for (const playerIdStr of playerList) {
+      const playerId = parseInt(playerIdStr);
+      const player = state.players[playerIdStr];
+      results.push({
+        userId: playerId,
+        kills: player.kills || 0,
+        deaths: player.deaths || 0,
+        placement: playerId === winnerId ? 1 : 2,
+        username: player.username || `Player ${playerId}`
+      });
+    }
+
+    // Sort by kills (descending) for proper placement
+    results.sort((a, b) => b.kills - a.kills);
+    results.forEach((result, index) => {
+      result.placement = index + 1;
+    });
+
+    // Update database
+    const sessionResult = await pool.query(
+      'SELECT id FROM game_sessions WHERE lobby_id = $1',
+      [lobbyId]
+    );
+
+    if (sessionResult.rows.length > 0) {
+      const sessionId = sessionResult.rows[0].id;
+
+      // Update game session status
+      await pool.query(
+        'UPDATE game_sessions SET status = $1, ended_at = NOW() WHERE lobby_id = $2',
+        ['finished', lobbyId]
+      );
+
+      // Update player stats
+      for (const result of results) {
+        const { userId, kills, deaths, placement } = result;
+
+        // Update game participants
+        await pool.query(
+          'UPDATE game_participants SET kills = $1, deaths = $2, placement = $3 WHERE session_id = $4 AND user_id = $5',
+          [kills, deaths, placement, sessionId, userId]
+        );
+
+        // Update player stats
+        const isWinner = placement === 1;
+        await pool.query(
+          `UPDATE player_stats
+           SET total_kills = total_kills + $1,
+               total_deaths = total_deaths + $2,
+               total_games = total_games + 1,
+               wins = wins + $3
+           WHERE user_id = $4`,
+          [kills, deaths, isWinner ? 1 : 0, userId]
+        );
+      }
+    }
+
+    // Update lobby status and reset player models
+    const lobby = await getLobby(lobbyId);
+    console.log('[handleGameOver] Lobby data:', JSON.stringify(lobby, null, 2));
+    if (lobby) {
+      lobby.status = 'waiting';
+      // Reset player models so they can select again
+      if (lobby.playerModels) {
+        for (const playerId in lobby.playerModels) {
+          lobby.playerModels[playerId] = null;
+        }
+      }
+      await updateLobby(lobbyId, lobby);
+    }
+
+    console.log('[handleGameOver] Broadcasting game_over with hostUserId:', lobby?.hostUserId);
+
+    // Broadcast game over
+    broadcast(lobbyId, {
+      type: 'game_over',
+      winnerId,
+      results,
+      hostUserId: lobby?.hostUserId,
+      timestamp: Date.now()
+    });
+
+    console.log(`Game over in lobby ${lobbyId}. Winner: ${winnerId}`);
+
+  } catch (error) {
+    console.error('Game over error:', error);
+  }
+}
+
+async function handleHostReturnToWaiting(lobbyId, userId) {
+  try {
+    const lobby = await getLobby(lobbyId);
+
+    if (!lobby) {
+      console.log('handleHostReturnToWaiting: Lobby not found');
+      return;
+    }
+
+    // Verify the user is the host
+    if (lobby.hostUserId !== userId) {
+      console.log('handleHostReturnToWaiting: User is not the host');
+      return;
+    }
+
+    // Get updated lobby state
+    const updatedLobby = await getLobby(lobbyId);
+
+    // Broadcast return to waiting room
+    broadcast(lobbyId, {
+      type: 'return_to_waiting',
+      lobbyId,
+      playerModels: updatedLobby?.playerModels || {},
+      timestamp: Date.now()
+    });
+
+    // Clean up game state
+    gameStates.delete(lobbyId);
+    playerInputs.delete(lobbyId);
+
+    console.log(`Host ${userId} returned lobby ${lobbyId} to waiting room`);
+
+  } catch (error) {
+    console.error('Host return to waiting error:', error);
   }
 }
 

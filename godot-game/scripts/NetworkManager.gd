@@ -13,6 +13,7 @@ signal game_started()
 signal game_state_received(state)
 signal kill_received(killer_id, victim_id)
 signal game_ended(results)
+signal game_over_received(winner_id, results, host_user_id)
 signal player_model_state_received(player_models)
 signal player_model_selected(user_id, model, player_models)
 signal player_left_lobby(user_id, model)
@@ -93,6 +94,8 @@ func _handle_message(data: Dictionary):
 			kill_received.emit(data.get("killerId"), data.get("victimId"))
 		"game_ended":
 			game_ended.emit(data.get("results"))
+		"game_over":
+			game_over_received.emit(data.get("winnerId"), data.get("results", []), data.get("hostUserId"))
 		"player_model_state":
 			player_model_state_received.emit(data.get("playerModels", {}))
 		"player_model_selected":

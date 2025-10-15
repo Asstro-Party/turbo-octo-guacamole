@@ -25,7 +25,8 @@ function Game({ user, token }) {
       if (wsRef.current) {
         wsRef.current.close();
       }
-      handleLeaveGame();
+      // Don't leave lobby on unmount - only when explicitly clicking "Leave Game"
+      // handleLeaveGame();
     };
   }, [lobbyId]);
 
@@ -120,10 +121,14 @@ function Game({ user, token }) {
       case 'player_action':
       case 'kill':
       case 'game_ended':
+      case 'game_over':
         sendToGodot(message);
         if (message.type === 'game_ended') {
           setTimeout(() => navigate('/lobby'), 3000);
         }
+        break;
+      case 'return_to_waiting':
+        navigate(`/waiting/${lobbyId}`);
         break;
       default:
         break;
@@ -230,7 +235,7 @@ function Game({ user, token }) {
 
       <div className="w-full max-w-6xl rounded-3xl border border-white/10 bg-slate-900/25 px-6 py-4 text-center text-xs uppercase tracking-[0.3em] text-slate-300/75 shadow-glass-lg backdrop-blur-2xl">
         <p>
-          <strong className="font-semibold text-slate-100">Controls:</strong> WASD to move, Mouse to aim, Click to shoot
+          <strong className="font-semibold text-slate-100">Controls:</strong> Q to move forward, SPACEBAR or click to shoot
         </p>
       </div>
     </SpaceBackground>

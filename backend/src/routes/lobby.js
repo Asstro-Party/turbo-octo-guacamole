@@ -192,6 +192,8 @@ router.post('/:lobbyId/leave', authenticate, async (req, res) => {
     const { lobbyId } = req.params;
     const userId = req.user.id;
 
+    console.log(`[leaveLobby] User ${userId} leaving lobby ${lobbyId}`);
+
     const lobby = await getLobby(lobbyId);
 
     if (!lobby) {

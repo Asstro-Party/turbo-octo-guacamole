@@ -13,6 +13,17 @@ var player_models = {}
 
 @onready var network_manager = $NetworkManager
 @onready var players_container = $Players
+@onready var health_bar = get_node_or_null("/root/Main/CanvasLayer/Control/HealthBar")
+@onready var kills_label = get_node_or_null("/root/Main/CanvasLayer/Control/KillsLabel")
+@onready var deaths_label = get_node_or_null("/root/Main/CanvasLayer/Control/DeathsLabel")
+@onready var game_over_screen = get_node_or_null("/root/Main/CanvasLayer/Control/GameOverScreen")
+@onready var winner_label = get_node_or_null("/root/Main/CanvasLayer/Control/GameOverScreen/Panel/VBoxContainer/WinnerLabel")
+@onready var scores_list = get_node_or_null("/root/Main/CanvasLayer/Control/GameOverScreen/Panel/VBoxContainer/ScoresList")
+@onready var return_button = get_node_or_null("/root/Main/CanvasLayer/Control/GameOverScreen/Panel/VBoxContainer/ReturnButton")
+@onready var host_only_label = get_node_or_null("/root/Main/CanvasLayer/Control/GameOverScreen/Panel/VBoxContainer/HostOnlyLabel")
+
+var is_host = false
+var current_lobby_id = ""
 
 func _ready():
 	# Connect to network manager signals
@@ -21,9 +32,14 @@ func _ready():
 	network_manager.game_state_received.connect(_on_game_state_received)
 	network_manager.kill_received.connect(_on_kill_received)
 	network_manager.game_ended.connect(_on_game_ended)
+	network_manager.game_over_received.connect(_on_game_over_received)
 	network_manager.player_model_state_received.connect(_on_player_model_state_received)
 	network_manager.player_model_selected.connect(_on_player_model_selected)
 	network_manager.player_left_lobby.connect(_on_player_left_lobby)
+
+	# Connect return button
+	if return_button:
+		return_button.pressed.connect(_on_return_button_pressed)
 
 	# Get game info from URL parameters (when embedded in web page)
 	if OS.has_feature("web"):
@@ -129,6 +145,10 @@ func _on_game_state_received(state: Dictionary):
 		player.kills = pdata.get("kills", 0)
 		player.deaths = pdata.get("deaths", 0)
 
+		# Update UI for local player
+		if pid == local_player_id:
+			_update_local_player_ui(player)
+
 	# --- Bullet sync ---
 	if state.has("bullets"):
 		var server_bullets = state["bullets"]
@@ -205,6 +225,99 @@ func _on_game_ended(results: Array):
 	print("Game ended! Results: ", results)
 	# Show end game screen
 	# Return to lobby after delay
+
+func _on_game_over_received(winner_id: int, results: Array, host_user_id):
+	print("Game over! Winner: ", winner_id, " Results: ", results, " Host: ", host_user_id)
+
+	# Set host flag - ensure type conversion
+	var host_id = int(host_user_id) if host_user_id != null else 0
+	is_host = (local_player_id == host_id)
+	print("[GameManager] Comparing local_player_id: ", local_player_id, " (type: ", typeof(local_player_id), ") with host_id: ", host_id, " (type: ", typeof(host_id), ") -> is_host: ", is_host)
+
+	# Show game over screen
+	if game_over_screen:
+		game_over_screen.visible = true
+
+	# Find winner info
+	var winner_name = "Unknown"
+	for result in results:
+		if result.get("userId") == winner_id:
+			winner_name = result.get("username", "Player " + str(winner_id))
+			break
+
+	# Update winner label
+	if winner_label:
+		if winner_id == local_player_id:
+			winner_label.text = "Y O U   W I N !"
+		else:
+			winner_label.text = (winner_name + "   W I N S !").to_upper()
+
+	# Clear and populate scores list
+	if scores_list:
+		# Clear existing children
+		for child in scores_list.get_children():
+			child.queue_free()
+
+		# Add scores
+		var place_emoji = ["🥇", "🥈", "🥉", "4️⃣"]
+		for i in range(results.size()):
+			var result = results[i]
+			var score_label = Label.new()
+			var player_name = result.get("username", "Player " + str(result.get("userId")))
+			var kills_count = result.get("kills", 0)
+			var deaths_count = result.get("deaths", 0)
+			var placement = result.get("placement", i + 1)
+			var emoji = place_emoji[min(placement - 1, 3)]
+
+			score_label.text = emoji + "  " + player_name.to_upper() + "  -  " + str(kills_count) + " K  /  " + str(deaths_count) + " D"
+			score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+			# Style the label
+			score_label.add_theme_font_size_override("font_size", 18)
+
+			# Highlight winner with themed colors
+			if placement == 1:
+				# Gold/emerald for winner (matches the button)
+				score_label.add_theme_color_override("font_color", Color(0.267, 0.878, 0.733, 1))
+			elif placement == 2:
+				# Light slate
+				score_label.add_theme_color_override("font_color", Color(0.812, 0.812, 0.843, 0.9))
+			elif placement == 3:
+				# Slightly dimmer
+				score_label.add_theme_color_override("font_color", Color(0.812, 0.812, 0.843, 0.75))
+			else:
+				score_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7, 1))
+
+			scores_list.add_child(score_label)
+
+	# Show/hide return button based on host status
+	if return_button:
+		return_button.visible = true
+		if is_host:
+			return_button.disabled = false
+			return_button.text = "Return to Waiting Room"
+		else:
+			return_button.disabled = true
+			return_button.text = "Waiting for host..."
+
+	if host_only_label:
+		host_only_label.visible = not is_host
+
+func _on_return_button_pressed():
+	if is_host:
+		# Send message to server to return everyone to waiting room
+		network_manager.send_message({
+			"type": "host_return_to_waiting",
+			"lobbyId": network_manager.lobby_id
+		})
+
+func _update_local_player_ui(player):
+	if health_bar:
+		health_bar.value = player.health
+	if kills_label:
+		kills_label.text = "Kills: " + str(player.kills)
+	if deaths_label:
+		deaths_label.text = "Deaths: " + str(player.deaths)
 
 func _on_player_model_state_received(models: Dictionary):
 	player_models = models.duplicate(true)
