@@ -22,7 +22,6 @@ var _default_texture: Texture2D = null
 @onready var sprite = $Sprite2D if has_node("Sprite2D") else null
 @onready var gun = $Gun if has_node("Gun") else null
 
-signal player_died(killer_id)
 signal player_shot()
 
 func _ready():
@@ -140,19 +139,6 @@ func _spawn_local_bullet():
 
 func apply_remote_action(action: String, data: Dictionary):
 	pass # No longer used; state is set by GameManager from server
-
-func take_damage(damage: int, attacker_id: int):
-	health -= damage
-	if health <= 0:
-		die(attacker_id)
-
-func die(killer_id: int):
-	deaths += 1
-	player_died.emit(killer_id)
-
-	# Respawn
-	health = 100
-	position = _get_random_spawn_position()
 
 func _get_random_spawn_position() -> Vector2:
 	var viewport_size = get_viewport().get_visible_rect().size

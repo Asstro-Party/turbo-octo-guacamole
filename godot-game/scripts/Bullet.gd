@@ -18,12 +18,6 @@ func _physics_process(delta):
 	position += velocity * delta
 
 func _on_body_entered(body):
-	if body.has_method("take_damage"):
-		# Don't damage the shooter
-		if body.player_id != shooter_id:
-			print("[Bullet] Hit detected on body", body.name, "by shooter", shooter_id, "damage", damage)
-			body.take_damage(damage, shooter_id)
-			queue_free()
-	elif body is TileMap or body is StaticBody2D:
-		# Hit wall
+	if body is TileMap or body is StaticBody2D:
+		# Hit wall - destroy bullet
 		queue_free()

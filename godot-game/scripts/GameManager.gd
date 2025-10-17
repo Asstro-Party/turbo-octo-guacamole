@@ -92,10 +92,6 @@ func spawn_player(player_id: int, username: String, is_local: bool):
 	player.name = "Player_" + str(player_id)
 	player.position = _get_spawn_position(players.size())
 
-	# Connect signals
-	# Connect directly so the signal provides (killer_id, victim_id)
-	player.player_died.connect(_on_player_died)
-
 	players_container.add_child(player)
 	players[player_id] = player
 
@@ -214,12 +210,6 @@ func _on_kill_received(killer_id: int, victim_id: int):
 
 	if players.has(victim_id):
 		players[victim_id].deaths += 1
-
-func _on_player_died(killer_id: int, victim_id: int):
-	# Send kill event to server only if this client is the killer
-	# Use a payload of (killer_id, victim_id, session_id)
-	if killer_id == local_player_id:
-		network_manager.send_kill(killer_id, victim_id, session_id)
 
 func _on_game_ended(results: Array):
 	print("Game ended! Results: ", results)
