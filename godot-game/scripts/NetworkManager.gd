@@ -13,6 +13,7 @@ signal game_started()
 signal game_state_received(state)
 signal kill_received(killer_id, victim_id)
 signal game_ended(results)
+## Remove duplicate signal declarations if present
 signal game_over_received(winner_id, results, host_user_id)
 signal player_model_state_received(player_models)
 signal player_model_selected(user_id, model, player_models)
@@ -115,9 +116,31 @@ func send_message(message: Dictionary):
 		var json_str = JSON.stringify(message)
 		socket.send_text(json_str)
 
-
 # Send player input (not state) to server
+# Throttle movement, but send shoot and significant rotation immediately
+var _last_input_send_time := 0.0
+const INPUT_SEND_INTERVAL := 0.05 # 20Hz
+var _last_sent_rotation: float = 0.0
+const ROTATION_THRESHOLD := 0.01 # radians
 func send_player_input(input: Dictionary):
+	var now = Time.get_ticks_msec() / 1000.0
+	var should_send := false
+
+	# Always send if shooting
+	if input.has("shoot"):
+		should_send = true
+
+	# Always send if rotation changed significantly
+	if input.has("rotation"):
+		if _last_sent_rotation == null or abs(input["rotation"] - _last_sent_rotation) > ROTATION_THRESHOLD:
+			should_send = true
+			_last_sent_rotation = input["rotation"]
+
+	# Otherwise, throttle movement
+	if not should_send and now - _last_input_send_time < INPUT_SEND_INTERVAL:
+		return
+
+	_last_input_send_time = now
 	send_message({
 		"type": "player_input",
 		"userId": user_id,

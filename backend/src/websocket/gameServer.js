@@ -1,9 +1,21 @@
 // Authoritative server-side game state
+// Simple async job queue for DB writes
+const dbQueue = [];
+let processingDb = false;
+async function processDbQueue() {
+  if (processingDb) return;
+  processingDb = true;
+  while (dbQueue.length) {
+    const job = dbQueue.shift();
+    try { await job(); } catch (e) { console.error('DB job failed', e); }
+  }
+  processingDb = false;
+}
 const gameStates = new Map(); // lobbyId -> { players: { [userId]: { ... } }, bullets: [ { id, position, velocity, rotation, shooterId, ... } ] }
 const playerInputs = new Map(); // lobbyId -> { [userId]: latestInput }
 
 // Game loop interval (ms)
-const TICK_RATE = 8; // ~60 times per second (60 FPS)
+const TICK_RATE = 50; // ~20 times per second (20 FPS)
 import { getLobby, updateLobby } from '../config/redis.js';
 import pool from '../config/database.js';
 
@@ -212,20 +224,32 @@ const GAME_HEIGHT = 720;
 
 // Main game loop for all lobbies
 // Calculates new player positions, handles collisions, and broadcasts state
+let tickCount = 0;
 setInterval(() => {
+  const now = Date.now();
+  const dt = TICK_RATE / 1000;
+  
   for (const [lobbyId, state] of gameStates.entries()) {
     const inputs = playerInputs.get(lobbyId) || {};
+    let stateChanged = false;
+    
     // Update each player's state based on their input
     for (const userId in state.players) {
       const input = inputs[userId];
       const player = state.players[userId];
+      const oldX = player.position.x;
+      const oldY = player.position.y;
+      const oldRot = player.rotation;
 
       if (input) {
         // If there is movement input and it's not zero, update position
         if (input.move && (input.move.x !== 0 || input.move.y !== 0)) {
-          player.velocity = input.move;
-          player.position.x += player.velocity.x * (TICK_RATE / 1000) * player.speed;
-          player.position.y += player.velocity.y * (TICK_RATE / 1000) * player.speed;
+          // Reuse velocity object to avoid allocation
+          if (!player.velocity) player.velocity = { x: 0, y: 0 };
+          player.velocity.x = input.move.x;
+          player.velocity.y = input.move.y;
+          player.position.x += player.velocity.x * dt * player.speed;
+          player.position.y += player.velocity.y * dt * player.speed;
 
           // Wrap around screen edges
           if (player.position.x < 0) player.position.x += GAME_WIDTH;
@@ -235,7 +259,7 @@ setInterval(() => {
         } else {
           // No movement or stopped: rotate clockwise
           const rotationSpeed = 2; // radians per second
-          player.rotation += rotationSpeed * (TICK_RATE / 1000);
+          player.rotation += rotationSpeed * dt;
         }
 
         // If there is a rotation input, override rotation
@@ -245,54 +269,78 @@ setInterval(() => {
       } else {
         // No input at all: rotate clockwise
         const rotationSpeed = 2; // radians per second
-        player.rotation += rotationSpeed * (TICK_RATE / 1000);
+        player.rotation += rotationSpeed * dt;
+      }
+      
+      // Track if player state changed
+      if (player.position.x !== oldX || player.position.y !== oldY || player.rotation !== oldRot) {
+        stateChanged = true;
       }
     }
-    // Update bullets
-    const dt = TICK_RATE / 1000;
-    const now = Date.now();
-    // Move bullets and remove those that go off-screen
-    state.bullets = state.bullets.filter(bullet => {
+    
+    // Update bullets - use in-place filtering for better performance
+    let writeIdx = 0;
+    for (let readIdx = 0; readIdx < state.bullets.length; readIdx++) {
+      const bullet = state.bullets[readIdx];
       bullet.position.x += bullet.velocity.x * dt;
       bullet.position.y += bullet.velocity.y * dt;
 
-      // Remove bullets that go off screen
+      // Remove bullets that go off screen or are too old
       if (bullet.position.x < 0 || bullet.position.x > GAME_WIDTH ||
-          bullet.position.y < 0 || bullet.position.y > GAME_HEIGHT) {
-        return false; // Remove bullet
+          bullet.position.y < 0 || bullet.position.y > GAME_HEIGHT ||
+          now - bullet.createdAt > 2000) {
+        stateChanged = true;
+        continue; // Skip this bullet (effectively removes it)
       }
-      // Also remove old bullets (lifetime check)
-      if (now - bullet.createdAt > 2000) {
-        return false;
+      
+      // Keep this bullet
+      if (writeIdx !== readIdx) {
+        state.bullets[writeIdx] = bullet;
       }
-      return true; // Keep bullet
-    });
+      writeIdx++;
+    }
+    state.bullets.length = writeIdx;
+    
     // Server-side collision detection: check bullets against players and apply damage
     // Minimal authoritative hit detection to keep clients in sync.
     const HIT_RADIUS = 20; // pixels
     const DAMAGE = 25;
+    const HIT_RADIUS_SQ = HIT_RADIUS * HIT_RADIUS;
+    
     for (let bi = state.bullets.length - 1; bi >= 0; bi--) {
       const bullet = state.bullets[bi];
       // defensive checks
       if (!bullet || !bullet.position || typeof bullet.shooterId === 'undefined') continue;
+      
+      let bulletHit = false;
       for (const pidStr in state.players) {
         const pid = parseInt(pidStr);
         if (pid === bullet.shooterId) continue; // don't hit shooter
         const player = state.players[pidStr];
         if (!player || !player.position) continue;
+        
         const dx = bullet.position.x - player.position.x;
         const dy = bullet.position.y - player.position.y;
-        if (dx * dx + dy * dy <= HIT_RADIUS * HIT_RADIUS) {
+        if (dx * dx + dy * dy <= HIT_RADIUS_SQ) {
           // Hit detected — apply damage
           player.health = (typeof player.health === 'number' ? player.health : 100) - DAMAGE;
-          console.log('[gameServer] Bullet', bullet.id, 'hit player', pid, 'shooter', bullet.shooterId, 'new_health', player.health);
+          stateChanged = true;
+          
           // Remove the bullet
           state.bullets.splice(bi, 1);
 
           // Handle player death
           if (player.health <= 0) {
             // Update in-memory stats
-            if (!state.players[bullet.shooterId]) state.players[bullet.shooterId] = { kills: 0, deaths: 0, health: 100, position: { x: 100, y: 100 }, rotation: 0 };
+            if (!state.players[bullet.shooterId]) {
+              state.players[bullet.shooterId] = { 
+                kills: 0, deaths: 0, health: 100, 
+                position: { x: 100, y: 100 }, 
+                rotation: 0,
+                velocity: { x: 0, y: 0 },
+                speed: 200
+              };
+            }
             state.players[bullet.shooterId].kills = (state.players[bullet.shooterId].kills || 0) + 1;
             player.deaths = (player.deaths || 0) + 1;
 
@@ -301,7 +349,7 @@ setInterval(() => {
               type: 'kill',
               killerId: bullet.shooterId,
               victimId: pid,
-              timestamp: Date.now()
+              timestamp: now
             });
 
             // Check for win condition (5 kills)
@@ -309,25 +357,34 @@ setInterval(() => {
               // Game over - someone won!
               handleGameOver(lobbyId, bullet.shooterId);
             } else {
-              // Respawn player (reset health and random position)
+              // Respawn player (reset health and reuse position object)
               player.health = 100;
-              player.position = { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 };
+              if (!player.position) player.position = { x: 0, y: 0 };
+              player.position.x = Math.random() * 400 + 100;
+              player.position.y = Math.random() * 400 + 100;
             }
           }
 
           // Bullet handled, stop checking other players for this bullet
+          bulletHit = true;
           break;
         }
       }
+      
+      // If bullet was removed by hit, skip to next bullet
+      if (bulletHit) continue;
     }
-    // Bullets are already filtered above (off-screen and lifetime check combined)
-    // Broadcast updated state to all clients (only once per tick)
-    broadcast(lobbyId, {
-      type: 'game_state',
-      state,
-      timestamp: Date.now()
-    });
+    
+    // Only broadcast if state changed or every 3rd tick to reduce network load
+    if (stateChanged || tickCount % 3 === 0) {
+      broadcast(lobbyId, {
+        type: 'game_state',
+        state,
+        timestamp: now
+      });
+    }
   }
+  tickCount++;
 }, TICK_RATE);
 
 async function handleKill(message, lobbyId) {
@@ -378,16 +435,15 @@ async function handleKill(message, lobbyId) {
       return; // reject the kill report silently
     }
 
-    // Update game participants
-    await pool.query(
+    dbQueue.push(() => pool.query(
       'UPDATE game_participants SET kills = kills + 1 WHERE session_id = $1 AND user_id = $2',
       [sessionId, killerId]
-    );
-
-    await pool.query(
+    ));
+    dbQueue.push(() => pool.query(
       'UPDATE game_participants SET deaths = deaths + 1 WHERE session_id = $1 AND user_id = $2',
       [sessionId, victimId]
-    );
+    ));
+    processDbQueue();
 
     // Broadcast kill event
     if (lobbyId) {
