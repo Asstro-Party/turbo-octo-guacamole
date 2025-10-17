@@ -235,7 +235,7 @@ function Game({ user, token }) {
 
       <div className="w-full max-w-6xl rounded-3xl border border-white/10 bg-slate-900/25 px-6 py-4 text-center text-xs uppercase tracking-[0.3em] text-slate-300/75 shadow-glass-lg backdrop-blur-2xl">
         <p>
-          <strong className="font-semibold text-slate-100">Controls:</strong> Q to move forward, SPACEBAR or click to shoot
+          <strong className="font-semibold text-slate-100">Controls:</strong> Q to move turn, SPACEBAR or click to shoot
         </p>
       </div>
     </SpaceBackground>
