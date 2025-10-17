@@ -43,19 +43,10 @@ func setup(p_player_id: int, p_is_local: bool, p_network_manager = null):
 func _physics_process(delta):
 	if is_local_player:
 		_handle_local_input(delta)
-		# For local testing without server (editor mode)
-		if not network_manager or not network_manager.connected:
-			_handle_local_movement(delta)
-		# else:
-		# 	# Multiplayer mode - handle shooting here
-		# 	if Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		# 		shoot()
 
 	# Update shoot cooldown
 	if _shoot_cooldown > 0.0:
 		_shoot_cooldown -= delta
-
-	# Do not move_and_slide() here; position is set by GameManager from server
 
 func _handle_local_input(delta):
 	# Only allow forward movement with space bar
@@ -70,33 +61,11 @@ func _handle_local_input(delta):
 	if network_manager:
 		network_manager.send_player_input(input_dict)
 
-func _handle_local_movement(delta):
-	# Local movement fallback for testing without server
-	var input_vector = Vector2.ZERO
-	input_vector.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
-	input_vector.y = Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
-	input_vector = input_vector.normalized()
-
-	if input_vector.length() > 0:
-		velocity = input_vector * speed
-		# Instant rotation - no interpolation for responsive turning
-		rotation = input_vector.angle()
-	else:
-		velocity = Vector2.ZERO
-
-	move_and_slide()
-
-	# Wrap around screen edges
-	_wrap_position()
-
 func _input(event):
 	if not is_local_player:
 		return
-	# Handle shooting for spacebar
-	if event is InputEventKey and event.pressed and event.keycode == KEY_SPACE and not event.echo:
-		shoot()
-	# Handle shooting for mouse button (single click)
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+	# Handle shooting for spacebar or mouse
+	if (event is InputEventKey and event.pressed and event.keycode == KEY_SPACE and not event.echo) or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
 		shoot()
 
 func shoot():
@@ -116,21 +85,6 @@ func shoot():
 			}
 		})
 		player_shot.emit()
-	else:
-		# Local mode - spawn bullet directly
-		_spawn_local_bullet()
-
-func _spawn_local_bullet():
-	if not bullet_scene or not gun:
-		return
-
-	var bullet = bullet_scene.instantiate()
-	bullet.position = gun.global_position
-	bullet.rotation = rotation
-	bullet.shooter_id = player_id
-
-	# Add bullet to the scene tree
-	get_tree().get_root().add_child(bullet)
 
 func apply_remote_action(action: String, data: Dictionary):
 	pass # No longer used; state is set by GameManager from server
