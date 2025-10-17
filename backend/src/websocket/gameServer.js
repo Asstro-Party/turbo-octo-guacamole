@@ -300,7 +300,7 @@ setInterval(() => {
     // Server-side collision detection: check bullets against players and apply damage
     // Minimal authoritative hit detection to keep clients in sync.
     const HIT_RADIUS = 20; // pixels
-    const DAMAGE = 25;
+    const DAMAGE = 50;
     const HIT_RADIUS_SQ = HIT_RADIUS * HIT_RADIUS;
     
     for (let bi = state.bullets.length - 1; bi >= 0; bi--) {
