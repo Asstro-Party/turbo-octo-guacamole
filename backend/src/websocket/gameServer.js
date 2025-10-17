@@ -203,7 +203,7 @@ function handlePlayerInput(ws, message, lobbyId) {
       if (shooter) {
         const pos = message.input.shoot.position;
         const rot = message.input.shoot.rotation;
-        const speed = 600; // Example bullet speed
+        const speed = 600;
         const bulletObj = {
           id: bulletId,
           position: { x: pos.x, y: pos.y },
@@ -237,43 +237,39 @@ setInterval(() => {
     for (const userId in state.players) {
       const input = inputs[userId];
       const player = state.players[userId];
+
+      // Defensive: ensure player has position, rotation, and speed
+      if (!player.position) player.position = { x: 100, y: 100 };
+      if (typeof player.rotation !== 'number') player.rotation = 0;
+      if (typeof player.speed !== 'number') player.speed = 200;
+
       const oldX = player.position.x;
       const oldY = player.position.y;
       const oldRot = player.rotation;
 
       if (input) {
-        // If there is movement input and it's not zero, update position
-        if (input.move && (input.move.x !== 0 || input.move.y !== 0)) {
-          // Reuse velocity object to avoid allocation
-          if (!player.velocity) player.velocity = { x: 0, y: 0 };
-          player.velocity.x = input.move.x;
-          player.velocity.y = input.move.y;
-          player.position.x += player.velocity.x * dt * player.speed;
-          player.position.y += player.velocity.y * dt * player.speed;
-
-          // Wrap around screen edges
-          if (player.position.x < 0) player.position.x += GAME_WIDTH;
-          if (player.position.x > GAME_WIDTH) player.position.x -= GAME_WIDTH;
-          if (player.position.y < 0) player.position.y += GAME_HEIGHT;
-          if (player.position.y > GAME_HEIGHT) player.position.y -= GAME_HEIGHT;
-        } else {
-          // No movement or stopped: rotate clockwise
-          const rotationSpeed = 2; // radians per second
-          player.rotation += rotationSpeed * dt;
-        }
-
-        // If there is a rotation input, override rotation
+        // Apply incremental clockwise rotation if present
         if (typeof input.rotation === 'number') {
-          player.rotation = input.rotation;
+          const rotationSpeed = player.rotationSpeed || Math.PI; // radians/sec
+          player.rotation += input.rotation * rotationSpeed * dt;
         }
-      } else {
-        // No input at all: rotate clockwise
-        const rotationSpeed = 2; // radians per second
-        player.rotation += rotationSpeed * dt;
       }
-      
+
+      // Always apply forward velocity in direction of player.rotation
+      const forwardSpeed = player.forwardSpeed || player.speed * 0.5;
+      player.position.x += Math.cos(player.rotation) * forwardSpeed * dt;
+      player.position.y += Math.sin(player.rotation) * forwardSpeed * dt;
+
+      // Wrap around screen edges
+      player.position.x = (player.position.x + GAME_WIDTH) % GAME_WIDTH;
+      player.position.y = (player.position.y + GAME_HEIGHT) % GAME_HEIGHT;
+
       // Track if player state changed
-      if (player.position.x !== oldX || player.position.y !== oldY || player.rotation !== oldRot) {
+      if (
+        player.position.x !== oldX ||
+        player.position.y !== oldY ||
+        player.rotation !== oldRot
+      ) {
         stateChanged = true;
       }
     }

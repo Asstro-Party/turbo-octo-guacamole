@@ -60,17 +60,12 @@ func _physics_process(delta):
 func _handle_local_input(delta):
 	# Only allow forward movement with space bar
 	var input_dict = {}
-	var move_vector = Vector2.ZERO
+	var rotation_input = 0.0
 
 	if Input.is_key_pressed(KEY_Q):
-		# Move forward in the direction of current rotation
-		move_vector.x = cos(rotation)
-		move_vector.y = sin(rotation)
-		move_vector = move_vector.normalized()
-	else:
-		move_vector = Vector2.ZERO
-	
-	input_dict["move"] = {"x": move_vector.x, "y": move_vector.y}
+		rotation_input = 1.0
+
+	input_dict["rotation"] = rotation_input
 
 	if network_manager:
 		network_manager.send_player_input(input_dict)
