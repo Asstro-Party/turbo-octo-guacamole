@@ -65,6 +65,18 @@ export function setupWebSocketServer(wss) {
             await handleHostReturnToWaiting(message.lobbyId, currentUserId);
             break;
 
+          case 'webrtc_offer':
+            await handleWebRTCOffer(ws, message, currentLobbyId);
+            break;
+
+          case 'webrtc_answer':
+            await handleWebRTCAnswer(ws, message, currentLobbyId);
+            break;
+
+          case 'webrtc_ice_candidate':
+            await handleICECandidate(ws, message, currentLobbyId);
+            break;
+
           default:
             console.log('Unknown message type:', message.type);
         }
@@ -710,6 +722,46 @@ function broadcastLobbyListUpdate() {
       client.send(data);
     }
   });
+}
+
+async function handleWebRTCOffer(ws, message, lobbyId) {
+  const { targetUserId, offer } = message;
+
+  // Forward offer to target user
+  const targetWs = userSockets.get(targetUserId);
+  if (targetWs && targetWs.readyState === 1) {
+    targetWs.send(JSON.stringify({
+      type: 'webrtc_offer',
+      fromUserId: message.fromUserId,
+      offer: offer
+    }));
+  }
+}
+
+async function handleWebRTCAnswer(ws, message, lobbyId) {
+  const { targetUserId, answer } = message;
+
+  const targetWs = userSockets.get(targetUserId);
+  if (targetWs && targetWs.readyState === 1) {
+    targetWs.send(JSON.stringify({
+      type: 'webrtc_answer',
+      fromUserId: message.fromUserId,
+      answer: answer
+    }));
+  }
+}
+
+async function handleICECandidate(ws, message, lobbyId) {
+  const { targetUserId, candidate } = message;
+
+  const targetWs = userSockets.get(targetUserId);
+  if (targetWs && targetWs.readyState === 1) {
+    targetWs.send(JSON.stringify({
+      type: 'webrtc_ice_candidate',
+      fromUserId: message.fromUserId,
+      candidate: candidate
+    }));
+  }
 }
 
 export { connections, userSockets, broadcast, broadcastLobbyListUpdate };
