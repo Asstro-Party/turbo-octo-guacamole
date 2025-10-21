@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getLobby, leaveLobby } from '../services/api';
 import SpaceBackground from '../components/SpaceBackground';
+import VoiceChat from '../services/voiceChat';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 
@@ -13,9 +14,9 @@ function Game({ user, token }) {
   const [playerModels, setPlayerModels] = useState({});
   const [localModel, setLocalModel] = useState('');
   const [loadingLobby, setLoadingLobby] = useState(true);
+  const [players, setPlayers] = useState([]);
   const wsRef = useRef(null);
-  const peerConnectionsRef = useRef({});
-  const localStreamRef = useRef(null);
+  const voiceChatRef = useRef(null);
 
   useEffect(() => {
     loadLobby();
@@ -25,7 +26,9 @@ function Game({ user, token }) {
       if (wsRef.current) {
         wsRef.current.close();
       }
-      handleLeaveGame();
+      if (voiceChatRef.current) {
+        voiceChatRef.current.stopVoiceChat();
+      }
     };
   }, [lobbyId]);
 
@@ -36,6 +39,15 @@ function Game({ user, token }) {
       setPlayerModels(models);
       const key = String(user.id);
       setLocalModel(models[key] || '');
+      
+      // Initialize players list from lobby
+      if (response.data.players) {
+        const playersList = response.data.players.map(playerId => ({
+          id: playerId,
+          username: `Player ${playerId}`
+        }));
+        setPlayers(playersList);
+      }
     } catch (err) {
       console.error('Failed to load lobby:', err);
     } finally {
@@ -70,10 +82,41 @@ function Game({ user, token }) {
     };
 
     wsRef.current = ws;
+    
+    // Initialize voice chat
+    voiceChatRef.current = new VoiceChat(ws, user.id);
   };
 
   const handleGameMessage = (message) => {
     switch (message.type) {
+      case 'joined':
+        if (message.players) {
+          const playersList = message.players.map(playerId => ({
+            id: playerId,
+            username: `Player ${playerId}`
+          }));
+          setPlayers(playersList);
+        }
+        break;
+
+      case 'player_joined':
+        setPlayers(prev => {
+          const exists = prev.some(p => p.id === message.userId);
+          if (!exists) {
+            const newPlayer = { id: message.userId, username: message.username };
+            
+            // If voice is enabled, connect to new player
+            if (voiceEnabled && voiceChatRef.current) {
+              voiceChatRef.current.connectToPeer(message.userId);
+            }
+            
+            return [...prev, newPlayer];
+          }
+          return prev;
+        });
+        sendToGodot(message);
+        break;
+
       case 'player_model_state': {
         const models = message.playerModels || {};
         setPlayerModels(models);
@@ -84,6 +127,7 @@ function Game({ user, token }) {
         sendToGodot(message);
         break;
       }
+
       case 'player_model_selected': {
         if (message.playerModels) {
           setPlayerModels(message.playerModels);
@@ -104,7 +148,9 @@ function Game({ user, token }) {
         sendToGodot(message);
         break;
       }
+
       case 'player_left': {
+        setPlayers(prev => prev.filter(p => p.id !== message.userId));
         setPlayerModels((prev) => {
           const updated = { ...prev };
           delete updated[String(message.userId)];
@@ -113,18 +159,23 @@ function Game({ user, token }) {
         sendToGodot(message);
         break;
       }
-      case 'joined':
-      case 'player_joined':
+
       case 'game_started':
       case 'game_state':
       case 'player_action':
       case 'kill':
       case 'game_ended':
+      case 'game_over':
         sendToGodot(message);
         if (message.type === 'game_ended') {
           setTimeout(() => navigate('/lobby'), 3000);
         }
         break;
+
+      case 'return_to_waiting':
+        navigate(`/waiting/${lobbyId}`);
+        break;
+
       default:
         break;
     }
@@ -160,18 +211,22 @@ function Game({ user, token }) {
   const toggleVoiceChat = async () => {
     if (!voiceEnabled) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        localStreamRef.current = stream;
+        await voiceChatRef.current.startVoiceChat();
+
+        // Connect to all existing players
+        players.forEach(player => {
+          if (player.id !== user.id) {
+            voiceChatRef.current.connectToPeer(player.id);
+          }
+        });
+
         setVoiceEnabled(true);
       } catch (err) {
-        console.error('Failed to access microphone:', err);
-        alert('Could not access microphone');
+        console.error('Failed to start voice chat:', err);
+        alert('Could not access microphone. Please check permissions.');
       }
     } else {
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
-        localStreamRef.current = null;
-      }
+      voiceChatRef.current.stopVoiceChat();
       setVoiceEnabled(false);
     }
   };
@@ -212,11 +267,8 @@ function Game({ user, token }) {
           </div>
         </div>
       </header>
-      
-
 
       <div className="game-container">
-        {/* Godot game will be embedded here */}
         {!loadingLobby && (
           <iframe
             id="godot-game"
@@ -230,7 +282,7 @@ function Game({ user, token }) {
 
       <div className="w-full max-w-6xl rounded-3xl border border-white/10 bg-slate-900/25 px-6 py-4 text-center text-xs uppercase tracking-[0.3em] text-slate-300/75 shadow-glass-lg backdrop-blur-2xl">
         <p>
-          <strong className="font-semibold text-slate-100">Controls:</strong> WASD to move, Mouse to aim, Click to shoot
+          <strong className="font-semibold text-slate-100">Controls:</strong> Q to turn, SPACEBAR or click to shoot
         </p>
       </div>
     </SpaceBackground>

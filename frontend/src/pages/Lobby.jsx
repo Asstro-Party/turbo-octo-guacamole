@@ -71,7 +71,7 @@ function Lobby({ user, token, onLogout }) {
         <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-3xl font-semibold uppercase tracking-[0.4em] text-slate-100 drop-shadow">
-              Astro Party
+              Asstro Party
             </h1>
             <p className="mt-2 text-xs uppercase tracking-[0.35em] text-slate-300/80">
               Galactic lobby control center

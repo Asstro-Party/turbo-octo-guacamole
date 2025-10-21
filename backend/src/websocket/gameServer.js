@@ -1,9 +1,21 @@
 // Authoritative server-side game state
+// Simple async job queue for DB writes
+const dbQueue = [];
+let processingDb = false;
+async function processDbQueue() {
+  if (processingDb) return;
+  processingDb = true;
+  while (dbQueue.length) {
+    const job = dbQueue.shift();
+    try { await job(); } catch (e) { console.error('DB job failed', e); }
+  }
+  processingDb = false;
+}
 const gameStates = new Map(); // lobbyId -> { players: { [userId]: { ... } }, bullets: [ { id, position, velocity, rotation, shooterId, ... } ] }
 const playerInputs = new Map(); // lobbyId -> { [userId]: latestInput }
 
 // Game loop interval (ms)
-const TICK_RATE = 50; // 20 times per second
+const TICK_RATE = 50; // ~20 times per second (20 FPS)
 import { getLobby, updateLobby } from '../config/redis.js';
 import pool from '../config/database.js';
 
@@ -49,6 +61,22 @@ export function setupWebSocketServer(wss) {
             await handleEndGame(message.lobbyId, message.results);
             break;
 
+          case 'host_return_to_waiting':
+            await handleHostReturnToWaiting(message.lobbyId, currentUserId);
+            break;
+
+          case 'webrtc_offer':
+            await handleWebRTCOffer(ws, message, currentLobbyId);
+            break;
+
+          case 'webrtc_answer':
+            await handleWebRTCAnswer(ws, message, currentLobbyId);
+            break;
+
+          case 'webrtc_ice_candidate':
+            await handleICECandidate(ws, message, currentLobbyId);
+            break;
+
           default:
             console.log('Unknown message type:', message.type);
         }
@@ -58,9 +86,9 @@ export function setupWebSocketServer(wss) {
       }
     });
 
-    ws.on('close', () => {
+    ws.on('close', async () => {
       allClients.delete(ws);
-      console.log('WebSocket connection closed');
+      console.log('WebSocket connection closed for user:', currentUserId);
       if (currentLobbyId && connections.has(currentLobbyId)) {
         connections.get(currentLobbyId).delete(ws);
         if (connections.get(currentLobbyId).size === 0) {
@@ -68,7 +96,10 @@ export function setupWebSocketServer(wss) {
         }
       }
       if (currentUserId) {
-        userSockets.delete(currentUserId);
+        // Only delete from userSockets if this is actually their current socket
+        if (userSockets.get(currentUserId) === ws) {
+          userSockets.delete(currentUserId);
+        }
         // Remove player from server game state
         if (currentLobbyId && gameStates.has(currentLobbyId)) {
           const state = gameStates.get(currentLobbyId);
@@ -184,7 +215,7 @@ function handlePlayerInput(ws, message, lobbyId) {
       if (shooter) {
         const pos = message.input.shoot.position;
         const rot = message.input.shoot.rotation;
-        const speed = 600; // Example bullet speed
+        const speed = 600;
         const bulletObj = {
           id: bulletId,
           position: { x: pos.x, y: pos.y },
@@ -199,61 +230,125 @@ function handlePlayerInput(ws, message, lobbyId) {
   }
 }
 
+// Game configuration
+const GAME_WIDTH = 1280;
+const GAME_HEIGHT = 720;
+
 // Main game loop for all lobbies
+// Calculates new player positions, handles collisions, and broadcasts state
+let tickCount = 0;
 setInterval(() => {
+  const now = Date.now();
+  const dt = TICK_RATE / 1000;
+  
   for (const [lobbyId, state] of gameStates.entries()) {
     const inputs = playerInputs.get(lobbyId) || {};
+    let stateChanged = false;
+    
     // Update each player's state based on their input
     for (const userId in state.players) {
       const input = inputs[userId];
+      const player = state.players[userId];
+
+      // Defensive: ensure player has position, rotation, and speed
+      if (!player.position) player.position = { x: 100, y: 100 };
+      if (typeof player.rotation !== 'number') player.rotation = 0;
+      if (typeof player.speed !== 'number') player.speed = 200;
+
+      const oldX = player.position.x;
+      const oldY = player.position.y;
+      const oldRot = player.rotation;
+
       if (input) {
-        // Example: input = { move: {x, y}, rotation, shoot }
-        // Update position, rotation, etc. (simple physics)
-        const player = state.players[userId];
-        if (input.move) {
-          player.velocity = input.move;
-          player.position.x += player.velocity.x * (TICK_RATE / 1000) * player.speed;
-          player.position.y += player.velocity.y * (TICK_RATE / 1000) * player.speed;
-        }
+        // Apply incremental clockwise rotation if present
         if (typeof input.rotation === 'number') {
-          player.rotation = input.rotation;
+          const rotationSpeed = player.rotationSpeed || Math.PI; // radians/sec
+          player.rotation += input.rotation * rotationSpeed * dt;
         }
       }
+
+      // Always apply forward velocity in direction of player.rotation
+      const forwardSpeed = player.forwardSpeed || player.speed * 0.5;
+      player.position.x += Math.cos(player.rotation) * forwardSpeed * dt;
+      player.position.y += Math.sin(player.rotation) * forwardSpeed * dt;
+
+      // Wrap around screen edges
+      player.position.x = (player.position.x + GAME_WIDTH) % GAME_WIDTH;
+      player.position.y = (player.position.y + GAME_HEIGHT) % GAME_HEIGHT;
+
+      // Track if player state changed
+      if (
+        player.position.x !== oldX ||
+        player.position.y !== oldY ||
+        player.rotation !== oldRot
+      ) {
+        stateChanged = true;
+      }
     }
-    // Update bullets
-    const dt = TICK_RATE / 1000;
-    const now = Date.now();
-    // Move bullets
-    for (const bullet of state.bullets) {
+    
+    // Update bullets - use in-place filtering for better performance
+    let writeIdx = 0;
+    for (let readIdx = 0; readIdx < state.bullets.length; readIdx++) {
+      const bullet = state.bullets[readIdx];
       bullet.position.x += bullet.velocity.x * dt;
       bullet.position.y += bullet.velocity.y * dt;
+
+      // Remove bullets that go off screen or are too old
+      if (bullet.position.x < 0 || bullet.position.x > GAME_WIDTH ||
+          bullet.position.y < 0 || bullet.position.y > GAME_HEIGHT ||
+          now - bullet.createdAt > 2000) {
+        stateChanged = true;
+        continue; // Skip this bullet (effectively removes it)
+      }
+      
+      // Keep this bullet
+      if (writeIdx !== readIdx) {
+        state.bullets[writeIdx] = bullet;
+      }
+      writeIdx++;
     }
+    state.bullets.length = writeIdx;
+    
     // Server-side collision detection: check bullets against players and apply damage
     // Minimal authoritative hit detection to keep clients in sync.
     const HIT_RADIUS = 20; // pixels
-    const DAMAGE = 25;
+    const DAMAGE = 50;
+    const HIT_RADIUS_SQ = HIT_RADIUS * HIT_RADIUS;
+    
     for (let bi = state.bullets.length - 1; bi >= 0; bi--) {
       const bullet = state.bullets[bi];
       // defensive checks
       if (!bullet || !bullet.position || typeof bullet.shooterId === 'undefined') continue;
+      
+      let bulletHit = false;
       for (const pidStr in state.players) {
         const pid = parseInt(pidStr);
         if (pid === bullet.shooterId) continue; // don't hit shooter
         const player = state.players[pidStr];
         if (!player || !player.position) continue;
+        
         const dx = bullet.position.x - player.position.x;
         const dy = bullet.position.y - player.position.y;
-        if (dx * dx + dy * dy <= HIT_RADIUS * HIT_RADIUS) {
+        if (dx * dx + dy * dy <= HIT_RADIUS_SQ) {
           // Hit detected — apply damage
           player.health = (typeof player.health === 'number' ? player.health : 100) - DAMAGE;
-          console.log('[gameServer] Bullet', bullet.id, 'hit player', pid, 'shooter', bullet.shooterId, 'new_health', player.health);
+          stateChanged = true;
+          
           // Remove the bullet
           state.bullets.splice(bi, 1);
 
           // Handle player death
           if (player.health <= 0) {
             // Update in-memory stats
-            if (!state.players[bullet.shooterId]) state.players[bullet.shooterId] = { kills: 0, deaths: 0, health: 100, position: { x: 100, y: 100 }, rotation: 0 };
+            if (!state.players[bullet.shooterId]) {
+              state.players[bullet.shooterId] = { 
+                kills: 0, deaths: 0, health: 100, 
+                position: { x: 100, y: 100 }, 
+                rotation: 0,
+                velocity: { x: 0, y: 0 },
+                speed: 200
+              };
+            }
             state.players[bullet.shooterId].kills = (state.players[bullet.shooterId].kills || 0) + 1;
             player.deaths = (player.deaths || 0) + 1;
 
@@ -262,35 +357,42 @@ setInterval(() => {
               type: 'kill',
               killerId: bullet.shooterId,
               victimId: pid,
-              timestamp: Date.now()
+              timestamp: now
             });
 
-            // Respawn player (reset health and random position)
-            player.health = 100;
-            player.position = { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 };
+            // Check for win condition (5 kills)
+            if (state.players[bullet.shooterId].kills >= 5) {
+              // Game over - someone won!
+              handleGameOver(lobbyId, bullet.shooterId);
+            } else {
+              // Respawn player (reset health and reuse position object)
+              player.health = 100;
+              if (!player.position) player.position = { x: 0, y: 0 };
+              player.position.x = Math.random() * 400 + 100;
+              player.position.y = Math.random() * 400 + 100;
+            }
           }
 
           // Bullet handled, stop checking other players for this bullet
+          bulletHit = true;
           break;
         }
       }
+      
+      // If bullet was removed by hit, skip to next bullet
+      if (bulletHit) continue;
     }
-    // Remove bullets after 2 seconds (lifetime)
-    state.bullets = state.bullets.filter(bullet => now - bullet.createdAt < 2000);
-    // Broadcast updated state to all clients
-    broadcast(lobbyId, {
-      type: 'game_state',
-      state,
-      timestamp: Date.now()
-    });
-
-    // Also immediately broadcast state after collision handling so clients see authoritative health/positions
-    broadcast(lobbyId, {
-      type: 'game_state',
-      state,
-      timestamp: Date.now()
-    });
+    
+    // Only broadcast if state changed or every 3rd tick to reduce network load
+    if (stateChanged || tickCount % 3 === 0) {
+      broadcast(lobbyId, {
+        type: 'game_state',
+        state,
+        timestamp: now
+      });
+    }
   }
+  tickCount++;
 }, TICK_RATE);
 
 async function handleKill(message, lobbyId) {
@@ -341,16 +443,15 @@ async function handleKill(message, lobbyId) {
       return; // reject the kill report silently
     }
 
-    // Update game participants
-    await pool.query(
+    dbQueue.push(() => pool.query(
       'UPDATE game_participants SET kills = kills + 1 WHERE session_id = $1 AND user_id = $2',
       [sessionId, killerId]
-    );
-
-    await pool.query(
+    ));
+    dbQueue.push(() => pool.query(
       'UPDATE game_participants SET deaths = deaths + 1 WHERE session_id = $1 AND user_id = $2',
       [sessionId, victimId]
-    );
+    ));
+    processDbQueue();
 
     // Broadcast kill event
     if (lobbyId) {
@@ -408,6 +509,141 @@ async function handleStartGame(lobbyId) {
 
   } catch (error) {
     console.error('Start game error:', error);
+  }
+}
+
+async function handleGameOver(lobbyId, winnerId) {
+  try {
+    const state = gameStates.get(lobbyId);
+    if (!state) return;
+
+    // Prepare results array with player stats
+    const results = [];
+    const playerList = Object.keys(state.players);
+
+    for (const playerIdStr of playerList) {
+      const playerId = parseInt(playerIdStr);
+      const player = state.players[playerIdStr];
+      results.push({
+        userId: playerId,
+        kills: player.kills || 0,
+        deaths: player.deaths || 0,
+        placement: playerId === winnerId ? 1 : 2,
+        username: player.username || `Player ${playerId}`
+      });
+    }
+
+    // Sort by kills (descending) for proper placement
+    results.sort((a, b) => b.kills - a.kills);
+    results.forEach((result, index) => {
+      result.placement = index + 1;
+    });
+
+    // Update database
+    const sessionResult = await pool.query(
+      'SELECT id FROM game_sessions WHERE lobby_id = $1',
+      [lobbyId]
+    );
+
+    if (sessionResult.rows.length > 0) {
+      const sessionId = sessionResult.rows[0].id;
+
+      // Update game session status
+      await pool.query(
+        'UPDATE game_sessions SET status = $1, ended_at = NOW() WHERE lobby_id = $2',
+        ['finished', lobbyId]
+      );
+
+      // Update player stats
+      for (const result of results) {
+        const { userId, kills, deaths, placement } = result;
+
+        // Update game participants
+        await pool.query(
+          'UPDATE game_participants SET kills = $1, deaths = $2, placement = $3 WHERE session_id = $4 AND user_id = $5',
+          [kills, deaths, placement, sessionId, userId]
+        );
+
+        // Update player stats
+        const isWinner = placement === 1;
+        await pool.query(
+          `UPDATE player_stats
+           SET total_kills = total_kills + $1,
+               total_deaths = total_deaths + $2,
+               total_games = total_games + 1,
+               wins = wins + $3
+           WHERE user_id = $4`,
+          [kills, deaths, isWinner ? 1 : 0, userId]
+        );
+      }
+    }
+
+    // Update lobby status and reset player models
+    const lobby = await getLobby(lobbyId);
+    console.log('[handleGameOver] Lobby data:', JSON.stringify(lobby, null, 2));
+    if (lobby) {
+      lobby.status = 'waiting';
+      // Reset player models so they can select again
+      if (lobby.playerModels) {
+        for (const playerId in lobby.playerModels) {
+          lobby.playerModels[playerId] = null;
+        }
+      }
+      await updateLobby(lobbyId, lobby);
+    }
+
+    console.log('[handleGameOver] Broadcasting game_over with hostUserId:', lobby?.hostUserId);
+
+    // Broadcast game over
+    broadcast(lobbyId, {
+      type: 'game_over',
+      winnerId,
+      results,
+      hostUserId: lobby?.hostUserId,
+      timestamp: Date.now()
+    });
+
+    console.log(`Game over in lobby ${lobbyId}. Winner: ${winnerId}`);
+
+  } catch (error) {
+    console.error('Game over error:', error);
+  }
+}
+
+async function handleHostReturnToWaiting(lobbyId, userId) {
+  try {
+    const lobby = await getLobby(lobbyId);
+
+    if (!lobby) {
+      console.log('handleHostReturnToWaiting: Lobby not found');
+      return;
+    }
+
+    // Verify the user is the host
+    if (lobby.hostUserId !== userId) {
+      console.log('handleHostReturnToWaiting: User is not the host');
+      return;
+    }
+
+    // Get updated lobby state
+    const updatedLobby = await getLobby(lobbyId);
+
+    // Broadcast return to waiting room
+    broadcast(lobbyId, {
+      type: 'return_to_waiting',
+      lobbyId,
+      playerModels: updatedLobby?.playerModels || {},
+      timestamp: Date.now()
+    });
+
+    // Clean up game state
+    gameStates.delete(lobbyId);
+    playerInputs.delete(lobbyId);
+
+    console.log(`Host ${userId} returned lobby ${lobbyId} to waiting room`);
+
+  } catch (error) {
+    console.error('Host return to waiting error:', error);
   }
 }
 
@@ -486,6 +722,46 @@ function broadcastLobbyListUpdate() {
       client.send(data);
     }
   });
+}
+
+async function handleWebRTCOffer(ws, message, lobbyId) {
+  const { targetUserId, offer } = message;
+
+  // Forward offer to target user
+  const targetWs = userSockets.get(targetUserId);
+  if (targetWs && targetWs.readyState === 1) {
+    targetWs.send(JSON.stringify({
+      type: 'webrtc_offer',
+      fromUserId: message.fromUserId,
+      offer: offer
+    }));
+  }
+}
+
+async function handleWebRTCAnswer(ws, message, lobbyId) {
+  const { targetUserId, answer } = message;
+
+  const targetWs = userSockets.get(targetUserId);
+  if (targetWs && targetWs.readyState === 1) {
+    targetWs.send(JSON.stringify({
+      type: 'webrtc_answer',
+      fromUserId: message.fromUserId,
+      answer: answer
+    }));
+  }
+}
+
+async function handleICECandidate(ws, message, lobbyId) {
+  const { targetUserId, candidate } = message;
+
+  const targetWs = userSockets.get(targetUserId);
+  if (targetWs && targetWs.readyState === 1) {
+    targetWs.send(JSON.stringify({
+      type: 'webrtc_ice_candidate',
+      fromUserId: message.fromUserId,
+      candidate: candidate
+    }));
+  }
 }
 
 export { connections, userSockets, broadcast, broadcastLobbyListUpdate };

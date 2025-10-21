@@ -20,6 +20,11 @@ config/icon="res://icon.png"
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
+window/vsync/vsync_mode=0
+
+[dotnet]
+
+project/assembly_name="Astro Party"
 
 [input]
 
@@ -44,7 +49,12 @@ move_right={
 ]
 }
 
+[physics]
+
+common/physics_jitter_fix=0.0
+
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.05, 0.05, 0.1, 1)
