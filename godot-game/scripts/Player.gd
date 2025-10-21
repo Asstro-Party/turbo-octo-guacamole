@@ -209,3 +209,7 @@ func _apply_player_model(model_name: String):
 
 	if _default_texture:
 		sprite.texture = _default_texture
+
+func teleport(new_position: Vector2):
+	position = new_position
+	# Optional: visual effect or invincibility frames

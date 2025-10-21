@@ -2,14 +2,19 @@ extends Node
 
 # Manages the game state and players
 @export var player_scene: PackedScene
-
+@export var moving_wall_scene: PackedScene
+@export var portal_scene: PackedScene
 
 var players = {}
 var bullets = {}
 var local_player_id = 0
 var session_id = 0
 var player_models = {}
-
+var moving_walls = []
+var active_portals = []
+var portal_spawn_timer = 0.0
+var portal_lifetime = 15.0  # How long portals last
+var portal_spawn_interval = 20.0  # How often new portals spawn
 
 @onready var network_manager = $NetworkManager
 @onready var players_container = $Players
@@ -24,6 +29,8 @@ func _ready():
 	network_manager.player_model_state_received.connect(_on_player_model_state_received)
 	network_manager.player_model_selected.connect(_on_player_model_selected)
 	network_manager.player_left_lobby.connect(_on_player_left_lobby)
+	spawn_moving_walls()
+	portal_spawn_timer = portal_spawn_interval
 
 	# Get game info from URL parameters (when embedded in web page)
 	if OS.has_feature("web"):
@@ -242,3 +249,74 @@ func _apply_player_model(player_id: int):
 		model_name = ""
 
 	players[player_id].set_player_model(model_name)
+
+func _process(delta):
+	# Portal spawning logic
+	portal_spawn_timer -= delta
+	if portal_spawn_timer <= 0 and active_portals.is_empty():
+		spawn_portal_pair()
+		portal_spawn_timer = portal_spawn_interval
+
+func spawn_moving_walls():
+	var viewport_size = get_viewport().get_visible_rect().size
+	var wall_positions = [
+		Vector2(400, viewport_size.y / 2),
+		Vector2(viewport_size.x / 2, 300),
+		Vector2(viewport_size.x - 400, viewport_size.y / 2)
+	]
+	
+	for i in range(3):
+		if not moving_wall_scene:
+			print("Error: moving_wall_scene not set")
+			return
+			
+		var wall = moving_wall_scene.instantiate()
+		wall.position = wall_positions[i]
+		wall.is_horizontal = (i % 2 == 0)
+		players_container.add_child(wall)
+		moving_walls.append(wall)
+
+func spawn_portal_pair():
+	if not portal_scene:
+		print("Error: portal_scene not set")
+		return
+	
+	var viewport_size = get_viewport().get_visible_rect().size
+	
+	# Spawn first portal
+	var portal1 = portal_scene.instantiate()
+	portal1.position = Vector2(
+		randf_range(150, viewport_size.x - 150),
+		randf_range(150, viewport_size.y - 150)
+	)
+	players_container.add_child(portal1)
+	
+	# Spawn second portal (far from first)
+	var portal2 = portal_scene.instantiate()
+	var min_distance = 400
+	var attempts = 0
+	while attempts < 10:
+		portal2.position = Vector2(
+			randf_range(150, viewport_size.x - 150),
+			randf_range(150, viewport_size.y - 150)
+		)
+		if portal1.position.distance_to(portal2.position) > min_distance:
+			break
+		attempts += 1
+	
+	players_container.add_child(portal2)
+	
+	# Link them
+	portal1.link_to(portal2)
+	
+	active_portals = [portal1, portal2]
+	
+	# Destroy after lifetime
+	await get_tree().create_timer(portal_lifetime).timeout
+	destroy_portals()
+
+func destroy_portals():
+	for portal in active_portals:
+		if is_instance_valid(portal):
+			portal.queue_free()
+	active_portals.clear()
