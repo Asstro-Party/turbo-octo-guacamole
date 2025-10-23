@@ -1,13 +1,14 @@
+import SimplePeer from 'simple-peer/simplepeer.min.js';
+
 class VoiceChat {
   constructor(websocket, localUserId) {
     this.ws = websocket;
     this.localUserId = localUserId;
     this.localStream = null;
-    this.peerConnections = new Map(); // userId -> RTCPeerConnection
-    this.remoteStreams = new Map(); // userId -> MediaStream
+    this.peers = new Map(); // userId -> SimplePeer instance
 
     // STUN servers for NAT traversal
-    this.iceServers = {
+    this.config = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
@@ -18,21 +19,15 @@ class VoiceChat {
   }
 
   setupWebSocketListeners() {
-    // Handle incoming WebRTC messages
+    // Handle incoming WebRTC signaling messages
     const originalOnMessage = this.ws.onmessage;
 
     this.ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
 
       switch (message.type) {
-        case 'webrtc_offer':
-          this.handleOffer(message.fromUserId, message.offer);
-          break;
-        case 'webrtc_answer':
-          this.handleAnswer(message.fromUserId, message.answer);
-          break;
-        case 'webrtc_ice_candidate':
-          this.handleICECandidate(message.fromUserId, message.candidate);
+        case 'webrtc_signal':
+          this.handleSignal(message.fromUserId, message.signal);
           break;
         default:
           // Pass to original handler
@@ -62,112 +57,93 @@ class VoiceChat {
     }
   }
 
-  async connectToPeer(remoteUserId) {
-    // Create peer connection
-    const peerConnection = new RTCPeerConnection(this.iceServers);
-    this.peerConnections.set(remoteUserId, peerConnection);
+  connectToPeer(remoteUserId) {
+    if (this.peers.has(remoteUserId)) {
+      console.log('Already connected to peer:', remoteUserId);
+      return;
+    }
 
-    // Add local audio tracks
-    this.localStream.getTracks().forEach(track => {
-      peerConnection.addTrack(track, this.localStream);
+    console.log('Initiating connection to peer:', remoteUserId);
+
+    // Create peer as initiator
+    const peer = new SimplePeer({
+      initiator: true,
+      stream: this.localStream,
+      config: this.config,
+      trickle: true
     });
 
-    // Handle incoming remote tracks
-    peerConnection.ontrack = (event) => {
-      console.log('Received remote track from:', remoteUserId);
-      this.remoteStreams.set(remoteUserId, event.streams[0]);
-      this.playRemoteAudio(remoteUserId, event.streams[0]);
-    };
-
-    // Handle ICE candidates
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        this.ws.send(JSON.stringify({
-          type: 'webrtc_ice_candidate',
-          fromUserId: this.localUserId,
-          targetUserId: remoteUserId,
-          candidate: event.candidate
-        }));
-      }
-    };
-
-    // Create and send offer
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-
-    this.ws.send(JSON.stringify({
-      type: 'webrtc_offer',
-      fromUserId: this.localUserId,
-      targetUserId: remoteUserId,
-      offer: offer
-    }));
+    this.setupPeerListeners(peer, remoteUserId);
+    this.peers.set(remoteUserId, peer);
   }
 
-  async handleOffer(remoteUserId, offer) {
-    // Create peer connection if doesn't exist
-    if (!this.peerConnections.has(remoteUserId)) {
-      const peerConnection = new RTCPeerConnection(this.iceServers);
-      this.peerConnections.set(remoteUserId, peerConnection);
+  handleSignal(remoteUserId, signal) {
+    let peer = this.peers.get(remoteUserId);
 
-      // Add local tracks
-      this.localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, this.localStream);
+    if (!peer) {
+      console.log('Received signal from new peer:', remoteUserId);
+      // Create peer as non-initiator
+      peer = new SimplePeer({
+        initiator: false,
+        stream: this.localStream,
+        config: this.config,
+        trickle: true
       });
 
-      // Handle remote tracks
-      peerConnection.ontrack = (event) => {
-        this.remoteStreams.set(remoteUserId, event.streams[0]);
-        this.playRemoteAudio(remoteUserId, event.streams[0]);
-      };
-
-      // Handle ICE candidates
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          this.ws.send(JSON.stringify({
-            type: 'webrtc_ice_candidate',
-            fromUserId: this.localUserId,
-            targetUserId: remoteUserId,
-            candidate: event.candidate
-          }));
-        }
-      };
+      this.setupPeerListeners(peer, remoteUserId);
+      this.peers.set(remoteUserId, peer);
     }
 
-    const peerConnection = this.peerConnections.get(remoteUserId);
-
-    // Set remote description
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-
-    // Create and send answer
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-
-    this.ws.send(JSON.stringify({
-      type: 'webrtc_answer',
-      fromUserId: this.localUserId,
-      targetUserId: remoteUserId,
-      answer: answer
-    }));
+    // Signal the peer
+    peer.signal(signal);
   }
 
-  async handleAnswer(remoteUserId, answer) {
-    const peerConnection = this.peerConnections.get(remoteUserId);
-    if (peerConnection) {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-    }
-  }
+  setupPeerListeners(peer, remoteUserId) {
+    // Handle signaling data
+    peer.on('signal', (signal) => {
+      console.log('Sending signal to:', remoteUserId);
+      this.ws.send(JSON.stringify({
+        type: 'webrtc_signal',
+        fromUserId: this.localUserId,
+        targetUserId: remoteUserId,
+        signal: signal
+      }));
+    });
 
-  async handleICECandidate(remoteUserId, candidate) {
-    const peerConnection = this.peerConnections.get(remoteUserId);
-    if (peerConnection) {
-      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    }
+    // Handle incoming stream
+    peer.on('stream', (stream) => {
+      console.log('Received stream from:', remoteUserId);
+      this.playRemoteAudio(remoteUserId, stream);
+    });
+
+    // Handle connection
+    peer.on('connect', () => {
+      console.log('Connected to peer:', remoteUserId);
+    });
+
+    // Handle errors
+    peer.on('error', (err) => {
+      console.error('Peer error with', remoteUserId, ':', err);
+    });
+
+    // Handle close
+    peer.on('close', () => {
+      console.log('Peer connection closed:', remoteUserId);
+      this.peers.delete(remoteUserId);
+      
+      // Remove audio element
+      const audioElement = document.getElementById(`audio-${remoteUserId}`);
+      if (audioElement) {
+        audioElement.remove();
+      }
+    });
   }
 
   playRemoteAudio(userId, stream) {
     // Create or get audio element for this user
     let audioElement = document.getElementById(`audio-${userId}`);
     console.log('Playing audio for user:', userId);
+    
     if (!audioElement) {
       audioElement = document.createElement('audio');
       audioElement.id = `audio-${userId}`;
@@ -185,9 +161,9 @@ class VoiceChat {
       this.localStream = null;
     }
 
-    // Close all peer connections
-    this.peerConnections.forEach((pc, userId) => {
-      pc.close();
+    // Destroy all peer connections
+    this.peers.forEach((peer, userId) => {
+      peer.destroy();
 
       // Remove audio element
       const audioElement = document.getElementById(`audio-${userId}`);
@@ -196,8 +172,7 @@ class VoiceChat {
       }
     });
 
-    this.peerConnections.clear();
-    this.remoteStreams.clear();
+    this.peers.clear();
   }
 
   muteLocalAudio(muted) {

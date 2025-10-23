@@ -65,16 +65,8 @@ export function setupWebSocketServer(wss) {
             await handleHostReturnToWaiting(message.lobbyId, currentUserId);
             break;
 
-          case 'webrtc_offer':
-            await handleWebRTCOffer(ws, message, currentLobbyId);
-            break;
-
-          case 'webrtc_answer':
-            await handleWebRTCAnswer(ws, message, currentLobbyId);
-            break;
-
-          case 'webrtc_ice_candidate':
-            await handleICECandidate(ws, message, currentLobbyId);
+          case 'webrtc_signal':
+            await handleWebRTCSignal(ws, message, currentLobbyId);
             break;
 
           default:
@@ -724,42 +716,16 @@ function broadcastLobbyListUpdate() {
   });
 }
 
-async function handleWebRTCOffer(ws, message, lobbyId) {
-  const { targetUserId, offer } = message;
+async function handleWebRTCSignal(ws, message, lobbyId) {
+  const { targetUserId, signal } = message;
 
-  // Forward offer to target user
+  // Forward signal to target user
   const targetWs = userSockets.get(targetUserId);
   if (targetWs && targetWs.readyState === 1) {
     targetWs.send(JSON.stringify({
-      type: 'webrtc_offer',
+      type: 'webrtc_signal',
       fromUserId: message.fromUserId,
-      offer: offer
-    }));
-  }
-}
-
-async function handleWebRTCAnswer(ws, message, lobbyId) {
-  const { targetUserId, answer } = message;
-
-  const targetWs = userSockets.get(targetUserId);
-  if (targetWs && targetWs.readyState === 1) {
-    targetWs.send(JSON.stringify({
-      type: 'webrtc_answer',
-      fromUserId: message.fromUserId,
-      answer: answer
-    }));
-  }
-}
-
-async function handleICECandidate(ws, message, lobbyId) {
-  const { targetUserId, candidate } = message;
-
-  const targetWs = userSockets.get(targetUserId);
-  if (targetWs && targetWs.readyState === 1) {
-    targetWs.send(JSON.stringify({
-      type: 'webrtc_ice_candidate',
-      fromUserId: message.fromUserId,
-      candidate: candidate
+      signal: signal
     }));
   }
 }
