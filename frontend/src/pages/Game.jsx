@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getLobby, leaveLobby } from '../services/api';
 import SpaceBackground from '../components/SpaceBackground';
+import VoiceChat from '../services/voiceChat';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 
@@ -10,12 +11,14 @@ function Game({ user, token }) {
   const navigate = useNavigate();
   const [connected, setConnected] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [selfMuted, setSelfMuted] = useState(false);
+  const [lobbyMuted, setLobbyMuted] = useState(false);
+  const [players, setPlayers] = useState([]);
   const [playerModels, setPlayerModels] = useState({});
   const [localModel, setLocalModel] = useState('');
   const [loadingLobby, setLoadingLobby] = useState(true);
   const wsRef = useRef(null);
-  const peerConnectionsRef = useRef({});
-  const localStreamRef = useRef(null);
+  const voiceChatRef = useRef(null);
 
   useEffect(() => {
     loadLobby();
@@ -55,6 +58,8 @@ function Game({ user, token }) {
         userId: user.id,
         username: user.username
       }));
+      // Ask backend for ICE servers for this lobby
+      ws.send(JSON.stringify({ type: 'get_ice_servers', lobbyId }));
     };
 
     ws.onmessage = (event) => {
@@ -75,6 +80,19 @@ function Game({ user, token }) {
 
   const handleGameMessage = (message) => {
     switch (message.type) {
+      case 'ice_servers': {
+        if (!voiceChatRef.current) {
+          voiceChatRef.current = new VoiceChat(wsRef.current, user.id);
+        }
+        voiceChatRef.current.setICEServers(message.config);
+        break;
+      }
+      case 'joined': {
+        // Track players for voice chat purposes
+        const list = message.players || [];
+        setPlayers(list);
+        break;
+      }
       case 'player_model_state': {
         const models = message.playerModels || {};
         setPlayerModels(models);
@@ -82,6 +100,18 @@ function Game({ user, token }) {
         if (models[key]) {
           setLocalModel(models[key]);
         }
+        sendToGodot(message);
+        break;
+      }
+      case 'player_joined': {
+        setPlayers((prev) => {
+          const next = Array.from(new Set([...(prev || []), message.userId]));
+          // connect to new peer if voice already enabled
+          if (voiceEnabled && voiceChatRef.current && message.userId !== user.id) {
+            voiceChatRef.current.connectToPeer(message.userId);
+          }
+          return next;
+        });
         sendToGodot(message);
         break;
       }
@@ -111,11 +141,10 @@ function Game({ user, token }) {
           delete updated[String(message.userId)];
           return updated;
         });
+        setPlayers((prev) => prev.filter((pid) => pid !== message.userId));
         sendToGodot(message);
         break;
       }
-      case 'joined':
-      case 'player_joined':
       case 'game_started':
       case 'game_state':
       case 'player_action':
@@ -165,20 +194,38 @@ function Game({ user, token }) {
   const toggleVoiceChat = async () => {
     if (!voiceEnabled) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        localStreamRef.current = stream;
+        if (!voiceChatRef.current) {
+          voiceChatRef.current = new VoiceChat(wsRef.current, user.id);
+        }
+        await voiceChatRef.current.startVoiceChat();
+        const expected = (players || []).filter((pid) => pid !== user.id);
+        voiceChatRef.current.setExpectedPeers(expected);
+        for (const pid of expected) {
+          await voiceChatRef.current.connectToPeer(pid);
+        }
         setVoiceEnabled(true);
       } catch (err) {
-        console.error('Failed to access microphone:', err);
+        console.error('Failed to start voice chat:', err);
         alert('Could not access microphone');
       }
     } else {
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
-        localStreamRef.current = null;
-      }
+      voiceChatRef.current?.stopVoiceChat();
+      setSelfMuted(false);
+      setLobbyMuted(false);
       setVoiceEnabled(false);
     }
+  };
+
+  const toggleSelfMute = () => {
+    const next = !selfMuted;
+    setSelfMuted(next);
+    voiceChatRef.current?.muteLocalAudio(next);
+  };
+
+  const toggleLobbyMute = () => {
+    const next = !lobbyMuted;
+    setLobbyMuted(next);
+    voiceChatRef.current?.muteLobbyAudio(next);
   };
 
   const handleLeaveLobby = async () => {
@@ -206,7 +253,21 @@ function Game({ user, token }) {
               className={`rounded-2xl border border-white/15 px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] transition ${voiceEnabled ? 'border-emerald-300/60 bg-emerald-300/10 text-emerald-200' : 'bg-slate-900/40 text-slate-200 hover:border-sky-400/60 hover:text-white'}`}
               onClick={toggleVoiceChat}
             >
-              {voiceEnabled ? 'Voice On' : 'Voice Off'}
+              {voiceEnabled ? 'Voice On' : 'Enable Voice'}
+            </button>
+            <button
+              disabled={!voiceEnabled}
+              className={`rounded-2xl border border-white/15 px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] transition ${lobbyMuted ? 'border-amber-300/60 bg-amber-300/10 text-amber-200' : 'bg-slate-900/40 text-slate-200 hover:border-sky-400/60 hover:text-white'}`}
+              onClick={toggleLobbyMute}
+            >
+              {lobbyMuted ? 'Lobby Muted' : 'Mute Lobby'}
+            </button>
+            <button
+              disabled={!voiceEnabled}
+              className={`rounded-2xl border border-white/15 px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] transition ${selfMuted ? 'border-rose-300/60 bg-rose-300/10 text-rose-200' : 'bg-slate-900/40 text-slate-200 hover:border-sky-400/60 hover:text-white'}`}
+              onClick={toggleSelfMute}
+            >
+              {selfMuted ? 'Self Muted' : 'Mute Self'}
             </button>
             <button
               onClick={handleLeaveLobby}

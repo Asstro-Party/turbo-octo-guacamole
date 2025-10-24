@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getLobby, leaveLobby, selectPlayerModel } from '../services/api';
 import SpaceBackground from '../components/SpaceBackground';
+import VoiceChat from '../services/voiceChat';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 const PLAYER_MODELS = [
@@ -21,7 +22,11 @@ function WaitingRoom({ user }) {
   const [playerModels, setPlayerModels] = useState({});
   const [selectionError, setSelectionError] = useState('');
   const [selectingModel, setSelectingModel] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceNotice, setVoiceNotice] = useState('');
+  const [voiceReadyUsers, setVoiceReadyUsers] = useState([]);
   const wsRef = useRef(null);
+  const voiceChatRef = useRef(null);
   const userKey = user ? String(user.id) : '';
 
   useEffect(() => {
@@ -34,14 +39,41 @@ function WaitingRoom({ user }) {
         userId: user.id,
         username: user.username
       }));
+      // Request per-lobby ICE servers
+      ws.send(JSON.stringify({ type: 'get_ice_servers', lobbyId }));
     };
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
       if (message.type === 'player_joined' || message.type === 'player_left') {
         loadLobby();
+        if (message.type === 'player_joined' && voiceEnabled && voiceChatRef.current && message.userId !== user.id) {
+          voiceChatRef.current.connectToPeer(message.userId);
+        }
       }
       if (message.type === 'game_started') {
         navigate(`/game/${lobbyId}`);
+      }
+      if (message.type === 'ice_servers') {
+        // Initialize VoiceChat once we have ICE config
+        if (!voiceChatRef.current) {
+          voiceChatRef.current = new VoiceChat(ws, user.id);
+        }
+        voiceChatRef.current.setICEServers(message.config);
+      }
+      if (message.type === 'voice_waiting') {
+        const waitingIds = message.waitingFor || [];
+        if (waitingIds.length) {
+          setVoiceNotice(`Waiting for voice chat: ${waitingIds.map((id) => id.toString().substring(0,6)).join(', ')}`);
+        } else {
+          setVoiceNotice('');
+        }
+      }
+      if (message.type === 'voice_ready_state') {
+        const ready = message.readyUsers || [];
+        setVoiceReadyUsers(ready);
+        // Helpful small status
+        const total = (players || []).length;
+        setVoiceNotice(`Voice Ready ${ready.length}/${total}`);
       }
       if (message.type === 'player_model_selected') {
         setPlayerModels(message.playerModels || {});
@@ -66,6 +98,11 @@ function WaitingRoom({ user }) {
     wsRef.current = ws;
     return () => {
       if (wsRef.current) wsRef.current.close();
+      // Stop voice on leaving waiting room only if it was enabled
+      if (voiceChatRef.current) {
+        voiceChatRef.current.stopVoiceChat();
+        voiceChatRef.current = null;
+      }
     };
     // eslint-disable-next-line
   }, [lobbyId]);
@@ -93,6 +130,41 @@ function WaitingRoom({ user }) {
     if (wsRef.current) {
       wsRef.current.send(JSON.stringify({ type: 'start_game', lobbyId }));
     }
+  };
+
+  const enableVoice = async () => {
+    try {
+      if (!voiceChatRef.current) {
+        voiceChatRef.current = new VoiceChat(wsRef.current, user.id);
+      }
+      // Ensure ICE servers were received; fallback to default inside service
+      await voiceChatRef.current.startVoiceChat();
+      // Build expected peers list from current players minus self
+      const expected = (players || []).filter((pid) => pid !== user.id);
+      voiceChatRef.current.setExpectedPeers(expected);
+      voiceChatRef.current.onAllConnected = () => {
+        try {
+          wsRef.current?.send(JSON.stringify({ type: 'voice_ready', lobbyId }));
+          setVoiceNotice('Voice connected with all peers.');
+        } catch {}
+      };
+      // Connect to each peer
+      for (const pid of expected) {
+        await voiceChatRef.current.connectToPeer(pid);
+      }
+      setVoiceEnabled(true);
+    } catch (err) {
+      console.error('Failed to start voice chat:', err);
+      setVoiceNotice('Microphone permission denied or unavailable.');
+    }
+  };
+
+  const disableVoice = () => {
+    if (voiceChatRef.current) {
+      voiceChatRef.current.stopVoiceChat();
+    }
+    setVoiceEnabled(false);
+    setVoiceNotice('');
   };
 
   const handleSelectModel = async (modelId) => {
@@ -240,13 +312,20 @@ function WaitingRoom({ user }) {
             <button
               className="rounded-2xl bg-gradient-to-r from-emerald-400 via-cyan-400 to-sky-500 px-6 py-3 text-[0.65rem] font-semibold uppercase tracking-[0.4em] text-slate-900 shadow-lg shadow-emerald-400/30 transition hover:-translate-y-0.5 hover:shadow-emerald-400/45 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               onClick={handleStartGame}
-              disabled={players.length < 2 || players.length > 4 || players.some(pid => !playerModels[String(pid)])}
+              disabled={
+                players.length < 2 ||
+                players.length > 4 ||
+                players.some(pid => !playerModels[String(pid)]) ||
+                players.some(pid => !(voiceReadyUsers || []).includes(pid))
+              }
             >
               {players.length < 2
                 ? 'Need at least 2 players'
                 : players.some(pid => !playerModels[String(pid)])
                   ? 'All players must choose a model'
-                  : 'Start Game'}
+                  : players.some(pid => !(voiceReadyUsers || []).includes(pid))
+                    ? 'Waiting for voice chat readiness'
+                    : 'Start Game'}
             </button>
           ) : (
             <div className="rounded-2xl border border-white/10 bg-slate-900/60 px-5 py-3 text-center text-[0.65rem] uppercase tracking-[0.35em] text-slate-300/70">
@@ -259,6 +338,22 @@ function WaitingRoom({ user }) {
           >
             Leave Lobby
           </button>
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={voiceEnabled ? disableVoice : enableVoice}
+              className={`rounded-2xl border px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] transition ${voiceEnabled ? 'border-emerald-300/60 bg-emerald-300/10 text-emerald-200' : 'border-white/15 bg-slate-900/40 text-slate-200 hover:border-sky-400/60 hover:text-white'}`}
+            >
+              {voiceEnabled ? 'Voice On' : 'Enable Voice'}
+            </button>
+          </div>
+          {voiceNotice && (
+            <div className="rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-2 text-[0.65rem] uppercase tracking-[0.3em] text-slate-300/70">
+              {voiceNotice}
+            </div>
+          )}
         </div>
       </div>
     </SpaceBackground>

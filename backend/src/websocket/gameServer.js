@@ -23,6 +23,85 @@ import pool from '../config/database.js';
 const connections = new Map(); // lobbyId -> Set of ws connections
 const userSockets = new Map(); // userId -> ws connection
 
+// Voice chat readiness per lobby: lobbyId -> Set(userId)
+const voiceReady = new Map();
+
+// ===== ICE CONFIG =====
+// NEW: local-only switch to bypass STUN/TURN entirely for LAN/dev tests.
+// If true, we return { iceServers: [] } and don't try to contact any STUN/TURN.
+// Set LOCAL_ONLY_WEBRTC=true in your env for local testing.
+const LOCAL_ONLY_WEBRTC = String(process.env.LOCAL_ONLY_WEBRTC || '').toLowerCase() === 'true';
+
+// Kept for non-local mode (production/dev with STUN/TURN)
+const STUN_POOL = [
+  'stun:stun.l.google.com:19302',
+  'stun:stun1.l.google.com:19302',
+  'stun:stun2.l.google.com:19302',
+  'stun:stun3.l.google.com:19302',
+  'stun:stun4.l.google.com:19302'
+];
+const TURN_URLS = ['turn:turn.local:3478'];
+
+function iceServersForLobby(lobbyId) {
+  // Local-only path: no STUN/TURN
+  if (LOCAL_ONLY_WEBRTC) {
+    const config = {
+      iceServers: [],
+      // Keep policy 'all' so browsers gather host/mDNS candidates (good for same-machine or LAN)
+      iceTransportPolicy: 'all',
+      // Some stacks benefit from small pool for faster local ICE; optional:
+      iceCandidatePoolSize: 0
+    };
+    try {
+      console.log('[ICE CONFIG][LOCAL ONLY]', JSON.stringify({
+        iceServers: [],
+        iceTransportPolicy: config.iceTransportPolicy
+      }));
+    } catch {}
+    return config;
+  }
+
+  // === Original behavior (with STUN/TURN) ===
+  let sum = 0;
+  for (let i = 0; i < String(lobbyId).length; i++) sum = (sum + String(lobbyId).charCodeAt(i)) | 0;
+  const perLobbyStun = STUN_POOL[Math.abs(sum) % STUN_POOL.length];
+
+  const parseList = (s) => (s ? String(s).split(',').map((t) => t.trim()).filter(Boolean) : []);
+
+  const stunUrls = [perLobbyStun, 'stun:stun.l.google.com:19302', ...parseList(process.env.STUN_URLS)];
+
+  const turnUrls = (() => {
+    const fromEnv = parseList(process.env.TURN_URLS);
+    return fromEnv.length ? fromEnv : TURN_URLS;
+  })();
+  const turnUsername = process.env.TURN_USERNAME || 'myuser';
+  const turnCredential =
+    process.env.TURN_PASSWORD ||
+    process.env.TURN_SECRET ||
+    process.env.TURN_CREDENTIAL ||
+    'mypassword';
+  const includeTurn = turnUrls.length > 0 && !!turnUsername && !!turnCredential;
+
+  const iceServers = [
+    ...stunUrls.map((u) => ({ urls: u })),
+    ...(includeTurn ? turnUrls.map((u) => ({ urls: u, username: turnUsername, credential: turnCredential })) : [])
+  ];
+
+  const forceTurn = String(process.env.FORCE_TURN || '').toLowerCase() === 'true';
+  const iceTransportPolicy = forceTurn ? 'relay' : 'all';
+
+  // Avoid logging credentials
+  try {
+    const safeLog = {
+      iceServers: iceServers.map((e) => ({ urls: e.urls, hasAuth: !!e.username })),
+      iceTransportPolicy
+    };
+    console.log('[ICE CONFIG]', JSON.stringify(safeLog));
+  } catch {}
+
+  return { iceServers, iceTransportPolicy };
+}
+
 // Store all WebSocket connections (for lobby browser updates)
 const allClients = new Set();
 
@@ -45,16 +124,16 @@ export function setupWebSocketServer(wss) {
             currentUserId = message.userId;
             break;
 
-              case 'player_input':
-                handlePlayerInput(ws, message, currentLobbyId);
-                break;
+          case 'player_input':
+            handlePlayerInput(ws, message, currentLobbyId);
+            break;
 
           case 'kill':
             await handleKill(message, currentLobbyId);
             break;
 
           case 'start_game':
-            await handleStartGame(message.lobbyId);
+            await handleStartGame(ws, message.lobbyId, currentUserId);
             break;
 
           case 'end_game':
@@ -64,6 +143,40 @@ export function setupWebSocketServer(wss) {
           case 'host_return_to_waiting':
             await handleHostReturnToWaiting(message.lobbyId, currentUserId);
             break;
+
+          // WebRTC signaling passthrough
+          case 'webrtc_offer':
+            await handleWebRTCOffer(ws, message, currentLobbyId);
+            break;
+          case 'webrtc_answer':
+            await handleWebRTCAnswer(ws, message, currentLobbyId);
+            break;
+          case 'webrtc_ice_candidate':
+            await handleICECandidate(ws, message, currentLobbyId);
+            break;
+
+          // Voice readiness gating
+          case 'voice_ready': {
+            if (!currentLobbyId || !currentUserId) break;
+            if (!voiceReady.has(currentLobbyId)) voiceReady.set(currentLobbyId, new Set());
+            voiceReady.get(currentLobbyId).add(currentUserId);
+            // Broadcast updated voice state to lobby
+            broadcast(currentLobbyId, {
+              type: 'voice_ready_state',
+              lobbyId: currentLobbyId,
+              userId: currentUserId,
+              readyUsers: Array.from(voiceReady.get(currentLobbyId))
+            });
+            break;
+          }
+
+          // Provide per-lobby ICE servers (now respects LOCAL_ONLY_WEBRTC)
+          case 'get_ice_servers': {
+            const lobbyId = message.lobbyId || currentLobbyId;
+            const config = iceServersForLobby(lobbyId);
+            ws.send(JSON.stringify({ type: 'ice_servers', lobbyId, config }));
+            break;
+          }
 
           default:
             console.log('Unknown message type:', message.type);
@@ -95,6 +208,10 @@ export function setupWebSocketServer(wss) {
             delete state.players[currentUserId];
           }
         }
+        // Clear voice ready status for this user
+        if (currentLobbyId && voiceReady.has(currentLobbyId)) {
+          voiceReady.get(currentLobbyId).delete(currentUserId);
+        }
       }
     });
 
@@ -113,7 +230,6 @@ async function handleJoinGame(ws, message, wss) {
   }
   connections.get(lobbyId).add(ws);
   userSockets.set(userId, ws);
-
 
   // Initialize game state for this lobby if not present
   if (!gameStates.has(lobbyId)) {
@@ -175,6 +291,53 @@ async function handleJoinGame(ws, message, wss) {
   console.log(`Player ${username} joined lobby ${lobbyId}`);
 }
 
+// --- WebRTC signaling helpers ---
+async function handleWebRTCOffer(ws, message, lobbyId) {
+  const { targetUserId, offer } = message;
+  console.log('[WS] webrtc_offer from', message.fromUserId, 'to', targetUserId, 'lobby', lobbyId);
+  const targetWs = userSockets.get(targetUserId);
+  if (targetWs && targetWs.readyState === 1) {
+    targetWs.send(JSON.stringify({
+      type: 'webrtc_offer',
+      fromUserId: message.fromUserId,
+      offer
+    }));
+  } else {
+    console.warn('[WS] webrtc_offer target not available for', targetUserId);
+  }
+}
+
+async function handleWebRTCAnswer(ws, message, lobbyId) {
+  const { targetUserId, answer } = message;
+  console.log('[WS] webrtc_answer from', message.fromUserId, 'to', targetUserId, 'lobby', lobbyId);
+  const targetWs = userSockets.get(targetUserId);
+  if (targetWs && targetWs.readyState === 1) {
+    targetWs.send(JSON.stringify({
+      type: 'webrtc_answer',
+      fromUserId: message.fromUserId,
+      answer
+    }));
+  } else {
+    console.warn('[WS] webrtc_answer target not available for', targetUserId);
+  }
+}
+
+async function handleICECandidate(ws, message, lobbyId) {
+  const { targetUserId, candidate } = message;
+  // Avoid logging entire candidate string to keep logs tidy
+  console.debug('[WS] ice_candidate from', message.fromUserId, 'to', targetUserId, 'lobby', lobbyId);
+  const targetWs = userSockets.get(targetUserId);
+  if (targetWs && targetWs.readyState === 1) {
+    targetWs.send(JSON.stringify({
+      type: 'webrtc_ice_candidate',
+      fromUserId: message.fromUserId,
+      candidate
+    }));
+  } else {
+    console.warn('[WS] ice_candidate target not available for', targetUserId);
+  }
+}
+
 async function handleGameState(ws, message, lobbyId) {
   // Broadcast game state to all players except sender
   if (lobbyId) {
@@ -185,7 +348,6 @@ async function handleGameState(ws, message, lobbyId) {
     }, ws);
   }
 }
-
 
 function handlePlayerInput(ws, message, lobbyId) {
   // Store latest input for this player
@@ -228,11 +390,11 @@ let tickCount = 0;
 setInterval(() => {
   const now = Date.now();
   const dt = TICK_RATE / 1000;
-  
+
   for (const [lobbyId, state] of gameStates.entries()) {
     const inputs = playerInputs.get(lobbyId) || {};
     let stateChanged = false;
-    
+
     // Update each player's state based on their input
     for (const userId in state.players) {
       const input = inputs[userId];
@@ -273,7 +435,7 @@ setInterval(() => {
         stateChanged = true;
       }
     }
-    
+
     // Update bullets - use in-place filtering for better performance
     let writeIdx = 0;
     for (let readIdx = 0; readIdx < state.bullets.length; readIdx++) {
@@ -288,7 +450,7 @@ setInterval(() => {
         stateChanged = true;
         continue; // Skip this bullet (effectively removes it)
       }
-      
+
       // Keep this bullet
       if (writeIdx !== readIdx) {
         state.bullets[writeIdx] = bullet;
@@ -296,32 +458,31 @@ setInterval(() => {
       writeIdx++;
     }
     state.bullets.length = writeIdx;
-    
-    // Server-side collision detection: check bullets against players and apply damage
-    // Minimal authoritative hit detection to keep clients in sync.
+
+    // Server-side collision detection
     const HIT_RADIUS = 20; // pixels
     const DAMAGE = 50;
     const HIT_RADIUS_SQ = HIT_RADIUS * HIT_RADIUS;
-    
+
     for (let bi = state.bullets.length - 1; bi >= 0; bi--) {
       const bullet = state.bullets[bi];
       // defensive checks
       if (!bullet || !bullet.position || typeof bullet.shooterId === 'undefined') continue;
-      
+
       let bulletHit = false;
       for (const pidStr in state.players) {
         const pid = parseInt(pidStr);
         if (pid === bullet.shooterId) continue; // don't hit shooter
         const player = state.players[pidStr];
         if (!player || !player.position) continue;
-        
+
         const dx = bullet.position.x - player.position.x;
         const dy = bullet.position.y - player.position.y;
         if (dx * dx + dy * dy <= HIT_RADIUS_SQ) {
           // Hit detected — apply damage
           player.health = (typeof player.health === 'number' ? player.health : 100) - DAMAGE;
           stateChanged = true;
-          
+
           // Remove the bullet
           state.bullets.splice(bi, 1);
 
@@ -329,9 +490,9 @@ setInterval(() => {
           if (player.health <= 0) {
             // Update in-memory stats
             if (!state.players[bullet.shooterId]) {
-              state.players[bullet.shooterId] = { 
-                kills: 0, deaths: 0, health: 100, 
-                position: { x: 100, y: 100 }, 
+              state.players[bullet.shooterId] = {
+                kills: 0, deaths: 0, health: 100,
+                position: { x: 100, y: 100 },
                 rotation: 0,
                 velocity: { x: 0, y: 0 },
                 speed: 200
@@ -366,11 +527,11 @@ setInterval(() => {
           break;
         }
       }
-      
+
       // If bullet was removed by hit, skip to next bullet
       if (bulletHit) continue;
     }
-    
+
     // Only broadcast if state changed or every 3rd tick to reduce network load
     if (stateChanged || tickCount % 3 === 0) {
       broadcast(lobbyId, {
@@ -391,11 +552,9 @@ async function handleKill(message, lobbyId) {
   console.log('[gameServer] userSockets has killerId?', userSockets.has(killerId));
 
   try {
-    // Minimal server-side verification to avoid obvious spoofing:
-    // Verify there exists a recent bullet in the authoritative game state
-    // that was fired by the claimed killer and is close to the victim's server position.
+    // Minimal server-side verification
     const MAX_BULLET_AGE_MS = 500; // how old a bullet may be and still considered valid
-    const MAX_HIT_DISTANCE = 48; // pixels (tweak as needed for your game scale)
+    const MAX_HIT_DISTANCE = 48; // pixels
 
     if (!lobbyId || !gameStates.has(lobbyId)) {
       console.log('[gameServer] handleKill: no game state for lobby', lobbyId);
@@ -456,8 +615,27 @@ async function handleKill(message, lobbyId) {
   }
 }
 
-async function handleStartGame(lobbyId) {
+async function handleStartGame(ws, lobbyId, requesterUserId) {
   try {
+    // Voice readiness gate: all players must be ready
+    const lobby = await getLobby(lobbyId);
+    const players = lobby?.players || [];
+    const readySet = voiceReady.get(lobbyId) || new Set();
+    const allReady = players.every((pid) => readySet.has(pid));
+    if (!allReady) {
+      const waitingFor = players.filter((pid) => !readySet.has(pid));
+      // Notify requester (host) and lobby
+      const notice = {
+        type: 'voice_waiting',
+        lobbyId,
+        waitingFor,
+        readyUsers: Array.from(readySet)
+      };
+      try { ws?.send(JSON.stringify(notice)); } catch {}
+      broadcast(lobbyId, notice);
+      return; // do not start yet
+    }
+
     // Update lobby status
     await updateLobby(lobbyId, { status: 'in_progress' });
 
@@ -477,8 +655,8 @@ async function handleStartGame(lobbyId) {
       const sessionId = result.rows[0].id;
 
       // Add participants
-      const lobby = await getLobby(lobbyId);
-      for (const userId of lobby.players) {
+      const lobby2 = await getLobby(lobbyId);
+      for (const userId of lobby2.players) {
         await pool.query(
           'INSERT INTO game_participants (session_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
           [sessionId, userId]
@@ -627,6 +805,7 @@ async function handleHostReturnToWaiting(lobbyId, userId) {
     // Clean up game state
     gameStates.delete(lobbyId);
     playerInputs.delete(lobbyId);
+    voiceReady.delete(lobbyId);
 
     console.log(`Host ${userId} returned lobby ${lobbyId} to waiting room`);
 
@@ -689,7 +868,6 @@ async function handleEndGame(lobbyId, results) {
     console.error('End game error:', error);
   }
 }
-
 
 function broadcast(lobbyId, message, excludeWs = null) {
   if (!connections.has(lobbyId)) return;

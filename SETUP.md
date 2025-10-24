@@ -57,6 +57,14 @@ cd backend
 cp .env.example .env
 # Edit .env with your settings (default values should work for local development)
 
+# Optional: WebRTC TURN servers for better connectivity
+# Add to backend/.env to enable authenticated TURN:
+# STUN_URLS=stun:stun.cloudflare.com:3478
+# TURN_URLS=turn:turn.example.com:3478,turns:turn.example.com:5349
+# TURN_USERNAME=myuser
+# TURN_PASSWORD=mypass    # or TURN_CREDENTIAL / TURN_SECRET
+# FORCE_TURN=false  # set to true to route via TURN only (relay)
+
 # Frontend (create .env file)
 cd ../frontend
 echo "VITE_API_URL=http://localhost:3000/api" > .env
@@ -427,6 +435,9 @@ docker exec -it game_redis redis-cli
 - Check browser permissions for microphone access
 - Verify HTTPS (WebRTC requires secure context in production)
 - Check WebRTC peer connection states in console
+- Ensure the Docker volume mounts the `turnserver.conf` file (not a directory) so coturn picks up your credentials
+- Update `turnserver.conf` with `external-ip=<your_public_ip>` when hosting behind NAT and restart the `coturn` container
+- Set matching credentials via backend env vars (`TURN_URLS`, `TURN_USERNAME`, `TURN_PASSWORD`) so clients receive the TURN server in their ICE config
 
 ## Next Steps
 

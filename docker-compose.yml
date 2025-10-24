@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -22,6 +20,24 @@ services:
     volumes:
       - redis_data:/data
 
+  coturn:
+    image: coturn/coturn:4.6.3   # pin a stable tag
+    container_name: coturn
+    restart: unless-stopped
+    environment:
+      # Automatically detect your external public IP (good for cloud setup behind NAT)
+      - DETECT_EXTERNAL_IP=yes
+    volumes:
+      # Mount your custom config
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+      # Persistent storage for turnserver state/logs (optional)
+      - coturn-data:/var/lib/coturn
+      - coturn-logs:/var/log/coturn
+    # Optionally use host networking if you want to avoid many port mappings
+    network_mode: "host"
+
 volumes:
   postgres_data:
   redis_data:
+  coturn-data:
+  coturn-logs:
