@@ -21,10 +21,90 @@ import pool from '../config/database.js';
 
 // Store active WebSocket connections
 const connections = new Map(); // lobbyId -> Set of ws connections
-const userSockets = new Map(); // userId -> ws connection
+const userSockets = new Map(); // userId -> Set of ws connections (user can have multiple: game + voice)
 
 // Store all WebSocket connections (for lobby browser updates)
 const allClients = new Set();
+
+// ==========================
+// WebRTC voice signalling state
+// ==========================
+export const voiceRooms = new Map(); // roomId (use lobbyId) -> Set<userId>
+const voicePresence = new Map(); // userId -> { roomId, joinedAt }
+
+const ICE_SERVERS = (() => {
+  try {
+    return process.env.WEBRTC_ICE_SERVERS ? JSON.parse(process.env.WEBRTC_ICE_SERVERS) : [
+      { urls: 'stun:stun.l.google.com:19302' }
+    ];
+  } catch (e) {
+    console.error('[voice] Failed to parse WEBRTC_ICE_SERVERS, using default STUN:', e);
+    return [{ urls: 'stun:stun.l.google.com:19302' }];
+  }
+})();
+
+function sendToUser(userId, payload) {
+  console.log(`[WebRTC] sendToUser called for userId: ${userId} (type: ${typeof userId})`);
+
+  let sockets = userSockets.get(userId);
+  if (!sockets) {
+    // Try type coercion
+    sockets = userSockets.get(Number(userId)) || userSockets.get(String(userId));
+  }
+
+  if (!sockets || sockets.size === 0) {
+    console.log(`[WebRTC] WARNING: No sockets found for user ${userId}`);
+    console.log(`[WebRTC] userSockets keys:`, Array.from(userSockets.keys()));
+    return;
+  }
+
+  console.log(`[WebRTC] Found ${sockets.size} socket(s) for user ${userId}`);
+  let sentCount = 0;
+
+  sockets.forEach(sock => {
+    if (sock.readyState !== 1) {
+      console.log(`[WebRTC] Skipping socket for user ${userId} - not ready (state: ${sock.readyState})`);
+      return;
+    }
+
+    try {
+      sock.send(JSON.stringify(payload));
+      sentCount++;
+    } catch (e) {
+      console.error(`[WebRTC] ERROR: Failed to send to user ${userId}:`, e.message);
+    }
+  });
+
+  console.log(`[WebRTC] Sent ${payload.type} to ${sentCount} socket(s) for user ${userId}`);
+}
+
+function broadcastVoice(roomId, payload, excludeUserId = null) {
+  const members = voiceRooms.get(roomId);
+  if (!members) return;
+  for (const uid of members) {
+    if (excludeUserId && uid === excludeUserId) continue;
+    sendToUser(uid, payload);
+  }
+}
+
+function ensureVoiceRoom(roomId) {
+  if (!voiceRooms.has(roomId)) {
+    console.log(`[WebRTC] Creating new voice room: ${roomId}`);
+    voiceRooms.set(roomId, new Set());
+  }
+  return voiceRooms.get(roomId);
+}
+
+function buildPeerInitHint(selfId, otherId) {
+  try {
+    const aNum = Number(selfId);
+    const bNum = Number(otherId);
+    if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) return aNum < bNum;
+    return String(selfId) < String(otherId);
+  } catch {
+    return String(selfId) < String(otherId);
+  }
+}
 
 export function setupWebSocketServer(wss) {
   wss.on('connection', (ws) => {
@@ -45,9 +125,9 @@ export function setupWebSocketServer(wss) {
             currentUserId = message.userId;
             break;
 
-              case 'player_input':
-                handlePlayerInput(ws, message, currentLobbyId);
-                break;
+          case 'player_input':
+            handlePlayerInput(ws, message, currentLobbyId);
+            break;
 
           case 'kill':
             await handleKill(message, currentLobbyId);
@@ -65,18 +145,81 @@ export function setupWebSocketServer(wss) {
             await handleHostReturnToWaiting(message.lobbyId, currentUserId);
             break;
 
+          // =============== VOICE: simple-peer signalling ==================
+          case 'joined_voice': {
+            const { roomId, userId } = message;
+            console.log(`[WebRTC] Received joined_voice:`, { roomId, userId });
+            if (!userId || !roomId) {
+              console.log(`[WebRTC] ERROR: Missing userId or roomId in joined_voice`);
+              break;
+            }
+            await handleJoinedVoice(roomId, userId);
+            break;
+          }
+
+          case 'leave_voice': {
+            const { roomId, userId } = message;
+            console.log(`[WebRTC] Received leave_voice:`, { roomId, userId });
+            if (!userId || !roomId) {
+              console.log(`[WebRTC] ERROR: Missing userId or roomId in leave_voice`);
+              break;
+            }
+            await handleLeaveVoice(roomId, userId);
+            break;
+          }
+
+          case 'voice_signal': {
+            const { roomId, fromUserId, toUserId, data: sig } = message;
+            console.log(`[WebRTC] Received voice_signal:`, { roomId, fromUserId, toUserId, signalType: sig?.type });
+            if (!roomId || !fromUserId || !toUserId || !sig) {
+              console.log(`[WebRTC] ERROR: Missing required fields in voice_signal`);
+              break;
+            }
+            await handleVoiceSignal({ roomId, fromUserId, toUserId, data: sig });
+            break;
+          }
+
+          case 'request_voice_peers': {
+            const { roomId, userId } = message;
+            console.log(`[WebRTC] User ${userId} requesting peers for room ${roomId}`);
+
+            const room = voiceRooms.get(roomId);
+            const peers = room ? Array.from(room).filter(id => id !== userId) : [];
+
+            console.log(`[WebRTC] Room ${roomId} peers for ${userId}:`, peers);
+            console.log(`[WebRTC] ICE servers:`, ICE_SERVERS);
+
+            sendToUser(userId, {
+              type: 'voice_peer_list',
+              roomId,
+              peers: peers.map(pid => ({ userId: pid, initiatorHint: buildPeerInitHint(userId, pid) })),
+              iceServers: ICE_SERVERS,
+            });
+            break;
+          }
+
           default:
             console.log('Unknown message type:', message.type);
         }
       } catch (error) {
         console.error('WebSocket message error:', error);
-        ws.send(JSON.stringify({ type: 'error', message: error.message }));
+        try { ws.send(JSON.stringify({ type: 'error', message: error.message })); } catch { }
       }
     });
 
     ws.on('close', async () => {
       allClients.delete(ws);
       console.log('WebSocket connection closed for user:', currentUserId);
+
+      // Voice cleanup if the user was in a voice room
+      if (currentUserId) {
+        const p = voicePresence.get(currentUserId);
+        if (p?.roomId) {
+          console.log(`[WebRTC] Cleaning up voice for disconnected user ${currentUserId} in room ${p.roomId}`);
+          await handleLeaveVoice(p.roomId, currentUserId);
+        }
+      }
+
       if (currentLobbyId && connections.has(currentLobbyId)) {
         connections.get(currentLobbyId).delete(ws);
         if (connections.get(currentLobbyId).size === 0) {
@@ -84,10 +227,15 @@ export function setupWebSocketServer(wss) {
         }
       }
       if (currentUserId) {
-        // Only delete from userSockets if this is actually their current socket
-        if (userSockets.get(currentUserId) === ws) {
-          userSockets.delete(currentUserId);
+        // Remove socket from user's set
+        const userSocketSet = userSockets.get(currentUserId);
+        if (userSocketSet) {
+          userSocketSet.delete(ws);
+          if (userSocketSet.size === 0) {
+            userSockets.delete(currentUserId);
+          }
         }
+
         // Remove player from server game state
         if (currentLobbyId && gameStates.has(currentLobbyId)) {
           const state = gameStates.get(currentLobbyId);
@@ -107,13 +255,22 @@ export function setupWebSocketServer(wss) {
 async function handleJoinGame(ws, message, wss) {
   const { lobbyId, userId, username } = message;
 
+  console.log(`[WebRTC] handleJoinGame - User ${userId} joining lobby ${lobbyId}`);
+
   // Add connection to lobby
   if (!connections.has(lobbyId)) {
     connections.set(lobbyId, new Set());
   }
   connections.get(lobbyId).add(ws);
-  userSockets.set(userId, ws);
 
+  // Add socket to user's set of sockets
+  if (!userSockets.has(userId)) {
+    userSockets.set(userId, new Set());
+  }
+  userSockets.get(userId).add(ws);
+
+  console.log(`[WebRTC] User ${userId} now has ${userSockets.get(userId).size} socket(s)`);
+  console.log(`[WebRTC] Total users in userSockets: ${userSockets.size}`);
 
   // Initialize game state for this lobby if not present
   if (!gameStates.has(lobbyId)) {
@@ -186,7 +343,6 @@ async function handleGameState(ws, message, lobbyId) {
   }
 }
 
-
 function handlePlayerInput(ws, message, lobbyId) {
   // Store latest input for this player
   if (!lobbyId || !message.userId) return;
@@ -228,11 +384,11 @@ let tickCount = 0;
 setInterval(() => {
   const now = Date.now();
   const dt = TICK_RATE / 1000;
-  
+
   for (const [lobbyId, state] of gameStates.entries()) {
     const inputs = playerInputs.get(lobbyId) || {};
     let stateChanged = false;
-    
+
     // Update each player's state based on their input
     for (const userId in state.players) {
       const input = inputs[userId];
@@ -273,7 +429,7 @@ setInterval(() => {
         stateChanged = true;
       }
     }
-    
+
     // Update bullets - use in-place filtering for better performance
     let writeIdx = 0;
     for (let readIdx = 0; readIdx < state.bullets.length; readIdx++) {
@@ -283,12 +439,12 @@ setInterval(() => {
 
       // Remove bullets that go off screen or are too old
       if (bullet.position.x < 0 || bullet.position.x > GAME_WIDTH ||
-          bullet.position.y < 0 || bullet.position.y > GAME_HEIGHT ||
-          now - bullet.createdAt > 2000) {
+        bullet.position.y < 0 || bullet.position.y > GAME_HEIGHT ||
+        now - bullet.createdAt > 2000) {
         stateChanged = true;
         continue; // Skip this bullet (effectively removes it)
       }
-      
+
       // Keep this bullet
       if (writeIdx !== readIdx) {
         state.bullets[writeIdx] = bullet;
@@ -296,32 +452,32 @@ setInterval(() => {
       writeIdx++;
     }
     state.bullets.length = writeIdx;
-    
+
     // Server-side collision detection: check bullets against players and apply damage
     // Minimal authoritative hit detection to keep clients in sync.
     const HIT_RADIUS = 20; // pixels
     const DAMAGE = 50;
     const HIT_RADIUS_SQ = HIT_RADIUS * HIT_RADIUS;
-    
+
     for (let bi = state.bullets.length - 1; bi >= 0; bi--) {
       const bullet = state.bullets[bi];
       // defensive checks
       if (!bullet || !bullet.position || typeof bullet.shooterId === 'undefined') continue;
-      
+
       let bulletHit = false;
       for (const pidStr in state.players) {
         const pid = parseInt(pidStr);
         if (pid === bullet.shooterId) continue; // don't hit shooter
         const player = state.players[pidStr];
         if (!player || !player.position) continue;
-        
+
         const dx = bullet.position.x - player.position.x;
         const dy = bullet.position.y - player.position.y;
         if (dx * dx + dy * dy <= HIT_RADIUS_SQ) {
           // Hit detected — apply damage
           player.health = (typeof player.health === 'number' ? player.health : 100) - DAMAGE;
           stateChanged = true;
-          
+
           // Remove the bullet
           state.bullets.splice(bi, 1);
 
@@ -329,9 +485,9 @@ setInterval(() => {
           if (player.health <= 0) {
             // Update in-memory stats
             if (!state.players[bullet.shooterId]) {
-              state.players[bullet.shooterId] = { 
-                kills: 0, deaths: 0, health: 100, 
-                position: { x: 100, y: 100 }, 
+              state.players[bullet.shooterId] = {
+                kills: 0, deaths: 0, health: 100,
+                position: { x: 100, y: 100 },
                 rotation: 0,
                 velocity: { x: 0, y: 0 },
                 speed: 200
@@ -366,11 +522,11 @@ setInterval(() => {
           break;
         }
       }
-      
+
       // If bullet was removed by hit, skip to next bullet
       if (bulletHit) continue;
     }
-    
+
     // Only broadcast if state changed or every 3rd tick to reduce network load
     if (stateChanged || tickCount % 3 === 0) {
       broadcast(lobbyId, {
@@ -690,6 +846,94 @@ async function handleEndGame(lobbyId, results) {
   }
 }
 
+// ==========================
+// Voice signalling handlers
+// ==========================
+export async function handleJoinedVoice(roomId, userId) {
+  console.log(`[WebRTC] User ${userId} joining voice room ${roomId}`);
+
+  const room = ensureVoiceRoom(roomId);
+  room.add(userId);
+  voicePresence.set(userId, { roomId, joinedAt: Date.now() });
+
+  // Reply to joiner with current peers and ICE config
+  const existing = Array.from(room).filter(id => id !== userId);
+  console.log(`[WebRTC] Room ${roomId} existing peers:`, existing);
+  console.log(`[WebRTC] Sending peer list to ${userId}:`, existing.map(pid => ({
+    userId: pid,
+    initiatorHint: buildPeerInitHint(userId, pid)
+  })));
+
+  sendToUser(userId, {
+    type: 'voice_peer_list',
+    roomId,
+    peers: existing.map(pid => ({ userId: pid, initiatorHint: buildPeerInitHint(userId, pid) })),
+    iceServers: ICE_SERVERS,
+  });
+
+  // Notify others
+  console.log(`[WebRTC] Notifying existing peers in room ${roomId} about new user ${userId}`);
+  broadcastVoice(roomId, {
+    type: 'voice_peer_joined',
+    roomId,
+    userId,
+  }, userId);
+
+  console.log(`[WebRTC] Room ${roomId} now has ${room.size} members:`, Array.from(room));
+}
+
+export async function handleLeaveVoice(roomId, userId) {
+  console.log(`[WebRTC] User ${userId} leaving voice room ${roomId}`);
+
+  const room = voiceRooms.get(roomId);
+  if (!room) {
+    console.log(`[WebRTC] Room ${roomId} not found for user ${userId}`);
+    return;
+  }
+
+  const hadUser = room.has(userId);
+  room.delete(userId);
+  voicePresence.delete(userId);
+
+  console.log(`[WebRTC] User ${userId} ${hadUser ? 'removed from' : 'was not in'} room ${roomId}`);
+  console.log(`[WebRTC] Room ${roomId} remaining members:`, Array.from(room));
+
+  broadcastVoice(roomId, { type: 'voice_peer_left', roomId, userId });
+
+  if (room.size === 0) {
+    console.log(`[WebRTC] Room ${roomId} is empty, deleting`);
+    voiceRooms.delete(roomId);
+  }
+}
+
+export async function handleVoiceSignal({ roomId, fromUserId, toUserId, data }) {
+  console.log(`[WebRTC] Signal from ${fromUserId} to ${toUserId} in room ${roomId}`);
+  console.log(`[WebRTC] Signal type:`, data?.type || 'unknown');
+
+  const room = voiceRooms.get(roomId);
+  if (!room) {
+    console.log(`[WebRTC] ERROR: Room ${roomId} not found`);
+    return;
+  }
+
+  if (!room.has(fromUserId)) {
+    console.log(`[WebRTC] ERROR: Sender ${fromUserId} not in room ${roomId}`);
+    return;
+  }
+
+  if (!room.has(toUserId)) {
+    console.log(`[WebRTC] ERROR: Recipient ${toUserId} not in room ${roomId}`);
+    return;
+  }
+
+  console.log(`[WebRTC] Forwarding signal from ${fromUserId} to ${toUserId}`);
+  sendToUser(toUserId, {
+    type: 'voice_signal',
+    roomId,
+    fromUserId,
+    data,
+  });
+}
 
 function broadcast(lobbyId, message, excludeWs = null) {
   if (!connections.has(lobbyId)) return;
