@@ -24,7 +24,6 @@ function WaitingRoom({ user }) {
   const [selectingModel, setSelectingModel] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState('');
-  const [voiceReadyUsers, setVoiceReadyUsers] = useState([]);
   const wsRef = useRef(null);
   const voiceChatRef = useRef(null);
   const userKey = user ? String(user.id) : '';
@@ -70,7 +69,6 @@ function WaitingRoom({ user }) {
       }
       if (message.type === 'voice_ready_state') {
         const ready = message.readyUsers || [];
-        setVoiceReadyUsers(ready);
         // Helpful small status
         const total = (players || []).length;
         setVoiceNotice(`Voice Ready ${ready.length}/${total}`);
@@ -315,17 +313,16 @@ function WaitingRoom({ user }) {
               disabled={
                 players.length < 2 ||
                 players.length > 4 ||
-                players.some(pid => !playerModels[String(pid)]) ||
-                players.some(pid => !(voiceReadyUsers || []).includes(pid))
+                players.some(pid => !playerModels[String(pid)])
               }
             >
               {players.length < 2
                 ? 'Need at least 2 players'
-                : players.some(pid => !playerModels[String(pid)])
+                : players.length > 4
+                  ? 'Max 4 players'
+                  : players.some(pid => !playerModels[String(pid)])
                   ? 'All players must choose a model'
-                  : players.some(pid => !(voiceReadyUsers || []).includes(pid))
-                    ? 'Waiting for voice chat readiness'
-                    : 'Start Game'}
+                  : 'Start Game'}
             </button>
           ) : (
             <div className="rounded-2xl border border-white/10 bg-slate-900/60 px-5 py-3 text-center text-[0.65rem] uppercase tracking-[0.35em] text-slate-300/70">

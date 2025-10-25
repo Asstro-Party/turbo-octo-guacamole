@@ -617,24 +617,15 @@ async function handleKill(message, lobbyId) {
 
 async function handleStartGame(ws, lobbyId, requesterUserId) {
   try {
-    // Voice readiness gate: all players must be ready
     const lobby = await getLobby(lobbyId);
-    const players = lobby?.players || [];
-    const readySet = voiceReady.get(lobbyId) || new Set();
-    const allReady = players.every((pid) => readySet.has(pid));
-    if (!allReady) {
-      const waitingFor = players.filter((pid) => !readySet.has(pid));
-      // Notify requester (host) and lobby
-      const notice = {
-        type: 'voice_waiting',
-        lobbyId,
-        waitingFor,
-        readyUsers: Array.from(readySet)
-      };
-      try { ws?.send(JSON.stringify(notice)); } catch {}
-      broadcast(lobbyId, notice);
-      return; // do not start yet
+    if (!lobby) {
+      console.warn('handleStartGame: Lobby not found', lobbyId);
+      return;
     }
+    const players = lobby.players || [];
+
+    // Voice chat readiness is optional for starting a game; clear any stale state.
+    voiceReady.delete(lobbyId);
 
     // Update lobby status
     await updateLobby(lobbyId, { status: 'in_progress' });
@@ -655,8 +646,8 @@ async function handleStartGame(ws, lobbyId, requesterUserId) {
       const sessionId = result.rows[0].id;
 
       // Add participants
-      const lobby2 = await getLobby(lobbyId);
-      for (const userId of lobby2.players) {
+      const participantLobby = lobby || await getLobby(lobbyId);
+      for (const userId of (participantLobby?.players || [])) {
         await pool.query(
           'INSERT INTO game_participants (session_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
           [sessionId, userId]

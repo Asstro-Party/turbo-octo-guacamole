@@ -248,30 +248,30 @@ function Game({ user, token }) {
               </span>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-nowrap items-center gap-3 overflow-x-auto">
             <button
-              className={`rounded-2xl border border-white/15 px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] transition ${voiceEnabled ? 'border-emerald-300/60 bg-emerald-300/10 text-emerald-200' : 'bg-slate-900/40 text-slate-200 hover:border-sky-400/60 hover:text-white'}`}
+              className={`shrink-0 whitespace-nowrap rounded-2xl border border-white/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.28em] transition ${voiceEnabled ? 'border-emerald-300/60 bg-emerald-300/10 text-emerald-200' : 'bg-slate-900/40 text-slate-200 hover:border-sky-400/60 hover:text-white'}`}
               onClick={toggleVoiceChat}
             >
               {voiceEnabled ? 'Voice On' : 'Enable Voice'}
             </button>
             <button
               disabled={!voiceEnabled}
-              className={`rounded-2xl border border-white/15 px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] transition ${lobbyMuted ? 'border-amber-300/60 bg-amber-300/10 text-amber-200' : 'bg-slate-900/40 text-slate-200 hover:border-sky-400/60 hover:text-white'}`}
+              className={`shrink-0 whitespace-nowrap rounded-2xl border border-white/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.28em] transition ${lobbyMuted ? 'border-amber-300/60 bg-amber-300/10 text-amber-200' : 'bg-slate-900/40 text-slate-200 hover:border-sky-400/60 hover:text-white'}`}
               onClick={toggleLobbyMute}
             >
               {lobbyMuted ? 'Lobby Muted' : 'Mute Lobby'}
             </button>
             <button
               disabled={!voiceEnabled}
-              className={`rounded-2xl border border-white/15 px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] transition ${selfMuted ? 'border-rose-300/60 bg-rose-300/10 text-rose-200' : 'bg-slate-900/40 text-slate-200 hover:border-sky-400/60 hover:text-white'}`}
+              className={`shrink-0 whitespace-nowrap rounded-2xl border border-white/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.28em] transition ${selfMuted ? 'border-rose-300/60 bg-rose-300/10 text-rose-200' : 'bg-slate-900/40 text-slate-200 hover:border-sky-400/60 hover:text-white'}`}
               onClick={toggleSelfMute}
             >
               {selfMuted ? 'Self Muted' : 'Mute Self'}
             </button>
             <button
               onClick={handleLeaveLobby}
-              className="rounded-2xl border border-rose-400/60 bg-rose-500/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] text-rose-200 transition hover:border-rose-300 hover:text-rose-100"
+              className="shrink-0 whitespace-nowrap rounded-2xl border border-rose-400/60 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.28em] text-rose-200 transition hover:border-rose-300 hover:text-rose-100"
             >
               Leave Game
             </button>
