@@ -79,7 +79,7 @@ function Game({ user, token }) {
       // Log ALL voice-related messages with high visibility
       if (message.type && message.type.startsWith('voice_')) {
         console.log('🎤 [WebRTC Client] VOICE MESSAGE RECEIVED:', message.type, message);
-      } else {
+      } else if (message.type !== 'lobby_list_updated') {
         console.log('[WebRTC Client] Received message:', message.type);
       }
       
@@ -178,7 +178,9 @@ function Game({ user, token }) {
 
   // ------------------ VOICE: simple-peer ------------------
   const handleVoiceMessage = (msg) => {
-    console.log('[WebRTC Client] handleVoiceMessage checking type:', msg.type);
+    if (msg.type !== 'lobby_list_updated') {
+      console.log('[WebRTC Client] handleVoiceMessage checking type:', msg.type);
+    }
     
     switch (msg.type) {
       case 'voice_peer_list': {
