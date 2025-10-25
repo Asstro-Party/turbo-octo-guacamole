@@ -45,8 +45,7 @@ class VoiceChat {
     if (this.peerConnections.has(remoteUserId)) return;
 
     console.log('[VoiceChat] Creating RTCPeerConnection to', remoteUserId, 'with config', this.iceConfig);
-    // const pc = new RTCPeerConnection(this.iceConfig);          // <-- commented out (uses this.iceConfig)
-    const pc = new RTCPeerConnection([]);                         // <-- use empty ICE servers (LAN-only)
+    const pc = new RTCPeerConnection(this.iceConfig || { iceServers: [] });
     this.peerConnections.set(remoteUserId, pc);
     const polite = String(this.localUserId) < String(remoteUserId);
     this.peerMeta.set(remoteUserId, { makingOffer: false, polite });
@@ -123,8 +122,7 @@ class VoiceChat {
   async handleOffer(fromUserId, offer) {
     let pc = this.peerConnections.get(fromUserId);
     if (!pc) {
-      // pc = new RTCPeerConnection(this.iceConfig);              // <-- commented out (uses this.iceConfig)
-      pc = new RTCPeerConnection([]);                             // <-- use empty ICE servers (LAN-only)
+      pc = new RTCPeerConnection(this.iceConfig || { iceServers: [] });
       this.peerConnections.set(fromUserId, pc);
       const polite = String(this.localUserId) < String(fromUserId);
       this.peerMeta.set(fromUserId, { makingOffer: false, polite });
