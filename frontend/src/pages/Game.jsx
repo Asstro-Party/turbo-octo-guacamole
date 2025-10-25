@@ -67,6 +67,7 @@ function Game({ user, token }) {
       // If user already toggled voice before socket reconnect, rejoin voice
       if (voiceEnabled) {
         console.log('[WebRTC Client] Reconnecting to voice room after WebSocket reconnect');
+          console.log('[WebRTC Client] ICE servers at reconnect (will use for new peers):', iceServersRef.current);
         ws.send(
           JSON.stringify({ type: 'joined_voice', roomId: lobbyId, userId: user.id })
         );
@@ -79,8 +80,6 @@ function Game({ user, token }) {
       // Log ALL voice-related messages with high visibility
       if (message.type && message.type.startsWith('voice_')) {
         console.log('🎤 [WebRTC Client] VOICE MESSAGE RECEIVED:', message.type, message);
-      } else if (message.type !== 'lobby_list_updated') {
-        console.log('[WebRTC Client] Received message:', message.type);
       }
       
       if (!handleVoiceMessage(message)) {
@@ -178,10 +177,6 @@ function Game({ user, token }) {
 
   // ------------------ VOICE: simple-peer ------------------
   const handleVoiceMessage = (msg) => {
-    if (msg.type !== 'lobby_list_updated') {
-      console.log('[WebRTC Client] handleVoiceMessage checking type:', msg.type);
-    }
-    
     switch (msg.type) {
       case 'voice_peer_list': {
         console.log('[WebRTC Client] Received voice_peer_list:', msg);
@@ -229,9 +224,6 @@ function Game({ user, token }) {
         }
         return true;
       }
-      default:
-        console.log('[WebRTC Client] Not a voice message, passing to game handler');
-        return false;
     }
   };
 
@@ -408,6 +400,7 @@ function Game({ user, token }) {
         setVoiceEnabled(true);
         
         // announce join to server to receive peer list + ICE
+        console.log('[WebRTC Client] ICE servers at join (will be used for peer creation):', iceServersRef.current);
         console.log('[WebRTC Client] Sending joined_voice to server');
         wsSend({ type: 'joined_voice', roomId: lobbyId, userId: user.id });
       } catch (err) {
