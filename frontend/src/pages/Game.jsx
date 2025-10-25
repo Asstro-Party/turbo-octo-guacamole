@@ -22,6 +22,8 @@ function Game({ user, token }) {
   const peerAudioRef = useRef({}); // peerId -> HTMLAudioElement
   const iceServersRef = useRef([{ urls: 'stun:stun.l.google.com:19302' }]);
   const remoteAudioContainerRef = useRef(null);
+  const iceCandidateQueue = useRef({}); // peerId -> array of queued candidates
+  const peerConnectionStates = useRef({}); // peerId -> { state, lastUpdate }
 
   useEffect(() => {
     loadLobby();
@@ -255,25 +257,67 @@ function Game({ user, token }) {
     console.log(`[WebRTC Client] Creating new SimplePeer for ${peerId}`);
     console.log(`[WebRTC Client] ICE servers:`, iceServersRef.current);
     
+    // Initialize ICE candidate queue for this peer
+    iceCandidateQueue.current[peerId] = [];
+    
     const peer = new SimplePeer({
       initiator,
       trickle: true,
       stream: localStreamRef.current,
-      config: { iceServers: iceServersRef.current },
+      config: { 
+        iceServers: iceServersRef.current,
+        // Optimize ICE gathering and connection
+        iceCandidatePoolSize: 10,
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
+        // Add TURN server priority
+        iceTransportPolicy: 'all'
+      },
+      // Optimize for low latency
+      offerOptions: {
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: false,
+        voiceActivityDetection: true
+      }
     });
 
     console.log(`[WebRTC Client] SimplePeer created for ${peerId}:`, peer);
+    
+    // Track connection state
+    peerConnectionStates.current[peerId] = {
+      state: 'new',
+      lastUpdate: Date.now()
+    };
 
-    // outbound signals -> server
+    // outbound signals -> server with batching for ICE candidates
+    let candidateBatchTimeout = null;
     peer.on('signal', (data) => {
-      console.log(`[WebRTC Client] Sending signal to ${peerId}:`, data.type);
-      wsSend({
-        type: 'voice_signal',
-        roomId: lobbyId,
-        fromUserId: user.id,
-        toUserId: peerId,
-        data,
-      });
+      // Batch ICE candidates to reduce signaling overhead
+      if (data.type === 'candidate') {
+        iceCandidateQueue.current[peerId].push(data);
+        
+        // Clear existing timeout
+        if (candidateBatchTimeout) {
+          clearTimeout(candidateBatchTimeout);
+        }
+        
+        // Send batched candidates after 50ms or when queue reaches 5
+        if (iceCandidateQueue.current[peerId].length >= 5) {
+          flushCandidates(peerId);
+        } else {
+          candidateBatchTimeout = setTimeout(() => flushCandidates(peerId), 50);
+        }
+      } else {
+        // Send offer/answer immediately
+        console.log(`[WebRTC Client] Sending signal to ${peerId}:`, data.type);
+        wsSend({
+          type: 'voice_signal',
+          roomId: lobbyId,
+          fromUserId: user.id,
+          toUserId: peerId,
+          data,
+        });
+      }
     });
 
     // when remote stream arrives, attach to an audio element
@@ -288,6 +332,10 @@ function Game({ user, token }) {
         el.autoplay = true;
         el.playsInline = true;
         el.setAttribute('data-peer', String(peerId));
+        
+        // Optimize audio playback
+        el.volume = 1.0;
+        
         peerAudioRef.current[peerId] = el;
         if (remoteAudioContainerRef.current) {
           remoteAudioContainerRef.current.appendChild(el);
@@ -302,20 +350,71 @@ function Game({ user, token }) {
 
     peer.on('connect', () => {
       console.log(`[WebRTC Client] ✅ Peer connection established with ${peerId}`);
+      peerConnectionStates.current[peerId] = {
+        state: 'connected',
+        lastUpdate: Date.now()
+      };
+      
+      // Flush any remaining candidates
+      flushCandidates(peerId);
     });
 
     peer.on('close', () => {
       console.log(`[WebRTC Client] Peer connection closed with ${peerId}`);
+      peerConnectionStates.current[peerId] = {
+        state: 'closed',
+        lastUpdate: Date.now()
+      };
       destroyPeer(peerId);
     });
     
     peer.on('error', (err) => {
       console.error(`[WebRTC Client] ❌ Peer error with ${peerId}:`, err);
+      peerConnectionStates.current[peerId] = {
+        state: 'failed',
+        lastUpdate: Date.now(),
+        error: err.message
+      };
+      
+      // Auto-retry on connection failure after 2 seconds
+      if (err.message.includes('Failed to set remote answer') || 
+          err.message.includes('Connection failed')) {
+        console.log(`[WebRTC Client] Scheduling retry for peer ${peerId} in 2s`);
+        setTimeout(() => {
+          if (peersRef.current[peerId]) {
+            console.log(`[WebRTC Client] Retrying connection to ${peerId}`);
+            destroyPeer(peerId);
+            ensurePeer(peerId, initiator);
+          }
+        }, 2000);
+      }
     });
 
     peersRef.current[peerId] = peer;
     console.log(`[WebRTC Client] Active peers:`, Object.keys(peersRef.current));
     return peer;
+  };
+  
+  // Helper function to flush batched ICE candidates
+  const flushCandidates = (peerId) => {
+    const candidates = iceCandidateQueue.current[peerId];
+    if (!candidates || candidates.length === 0) return;
+    
+    console.log(`[WebRTC Client] Flushing ${candidates.length} ICE candidates for ${peerId}`);
+    
+    // Send all candidates as a batch
+    candidates.forEach(data => {
+      wsSend({
+        type: 'voice_signal',
+        roomId: lobbyId,
+        fromUserId: user.id,
+        toUserId: peerId,
+        data,
+      });
+    });
+    
+    // Clear the queue
+    iceCandidateQueue.current[peerId] = [];
   };
 
   const destroyPeer = (peerId) => {
@@ -337,7 +436,12 @@ function Game({ user, token }) {
     const el = peerAudioRef.current[peerId];
     if (el) {
       try {
-        el.srcObject = null;
+        // Properly clean up audio element
+        if (el.srcObject) {
+          const tracks = el.srcObject.getTracks();
+          tracks.forEach(track => track.stop());
+          el.srcObject = null;
+        }
         el.remove();
         console.log(`[WebRTC Client] Audio element removed for ${peerId}`);
       } catch (e) {
@@ -345,6 +449,10 @@ function Game({ user, token }) {
       }
       delete peerAudioRef.current[peerId];
     }
+    
+    // Clean up state tracking
+    delete peerConnectionStates.current[peerId];
+    delete iceCandidateQueue.current[peerId];
     
     console.log(`[WebRTC Client] Remaining peers:`, Object.keys(peersRef.current));
   };
@@ -392,7 +500,18 @@ function Game({ user, token }) {
       console.log('[WebRTC Client] Enabling voice chat');
       try {
         console.log('[WebRTC Client] Requesting microphone access');
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // Optimized audio constraints for better quality and echo cancellation
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000,
+            channelCount: 1
+          } 
+        });
+        
         console.log('[WebRTC Client] Microphone access granted');
         console.log('[WebRTC Client] Stream tracks:', stream.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled })));
         

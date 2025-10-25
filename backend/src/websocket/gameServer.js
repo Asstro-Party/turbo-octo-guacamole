@@ -32,6 +32,18 @@ const allClients = new Set();
 export const voiceRooms = new Map(); // roomId (use lobbyId) -> Set<userId>
 const voicePresence = new Map(); // userId -> { roomId, joinedAt }
 
+// Connection timeout management
+const VOICE_TIMEOUT_MS = 300000; // 5 minutes of inactivity
+const cleanupInterval = setInterval(() => {
+  const now = Date.now();
+  for (const [userId, presence] of voicePresence.entries()) {
+    if (now - presence.joinedAt > VOICE_TIMEOUT_MS) {
+      console.log(`[WebRTC] Cleaning up stale voice connection for user ${userId}`);
+      handleLeaveVoice(presence.roomId, userId);
+    }
+  }
+}, 60000); // Check every minute
+
 const ICE_SERVERS = (() => {
   try {
     return process.env.WEBRTC_ICE_SERVERS ? JSON.parse(process.env.WEBRTC_ICE_SERVERS) : [
@@ -851,6 +863,7 @@ async function handleEndGame(lobbyId, results) {
 // ==========================
 export async function handleJoinedVoice(roomId, userId) {
   console.log(`[WebRTC] User ${userId} joining voice room ${roomId}`);
+  console.log(`[WebRTC] ICE servers being sent to client:`, JSON.stringify(ICE_SERVERS));
 
   const room = ensureVoiceRoom(roomId);
   room.add(userId);
