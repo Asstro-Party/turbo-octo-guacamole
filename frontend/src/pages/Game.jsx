@@ -504,10 +504,10 @@ function Game({ user, token }) {
         // Optimized audio constraints for better quality and echo cancellation
         const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
+            echoCancellation: false,
+            noiseSuppression: false,
             autoGainControl: true,
-            sampleRate: 48000,
+            sampleRate: 16000,
             channelCount: 1
           } 
         });
