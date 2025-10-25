@@ -67,12 +67,6 @@ function WaitingRoom({ user }) {
           setVoiceNotice('');
         }
       }
-      if (message.type === 'voice_ready_state') {
-        const ready = message.readyUsers || [];
-        // Helpful small status
-        const total = (players || []).length;
-        setVoiceNotice(`Voice Ready ${ready.length}/${total}`);
-      }
       if (message.type === 'player_model_selected') {
         setPlayerModels(message.playerModels || {});
         if (message.userId === user?.id) {
@@ -143,7 +137,6 @@ function WaitingRoom({ user }) {
       voiceChatRef.current.onAllConnected = () => {
         try {
           wsRef.current?.send(JSON.stringify({ type: 'voice_ready', lobbyId }));
-          setVoiceNotice('Voice connected with all peers.');
         } catch {}
       };
       // Connect to each peer
