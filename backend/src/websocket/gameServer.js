@@ -156,7 +156,9 @@ export function setupWebSocketServer(wss) {
           case 'host_return_to_waiting':
             await handleHostReturnToWaiting(message.lobbyId, currentUserId);
             break;
-
+          case "play_sound":
+            handlePlaySound(ws, message);
+            break;
           // =============== VOICE: simple-peer signalling ==================
           case 'joined_voice': {
             const { roomId, userId } = message;
@@ -857,6 +859,28 @@ async function handleEndGame(lobbyId, results) {
     console.error('End game error:', error);
   }
 }
+
+function handlePlaySound(ws, message) {
+  // Validate required fields
+  if (!message.sound) return;
+
+  // Determine which lobby the sender belongs to
+  const lobbyId = ws.lobbyId;
+  if (!lobbyId || !lobbies[lobbyId]) return;
+
+  // Broadcast to everyone except the sender
+  lobbies[lobbyId].forEach(player => {
+    if (player !== ws && player.readyState === WebSocket.OPEN) {
+      player.send(JSON.stringify({
+        type: "play_sound",
+        sound: message.sound,
+        position: message.position || null
+      }));
+    }
+  });
+}
+
+
 
 // ==========================
 // Voice signalling handlers

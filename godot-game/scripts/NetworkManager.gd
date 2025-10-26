@@ -110,6 +110,27 @@ func _handle_message(data: Dictionary):
 				data.get("userId"),
 				data.get("model")
 			)
+		"play_sound":
+			_handle_play_sound(data)
+			
+
+func _handle_play_sound(data: Dictionary):
+	var sound_name: String = data.get("sound", "")
+	if sound_name == "":
+		print("[NetworkManager] Received play_sound with no sound name")
+		return
+
+	var pos_dict = data.get("position", null)
+	var position = Vector2.ZERO
+	if pos_dict:
+		position = Vector2(
+			pos_dict.get("x", 0.0),
+			pos_dict.get("y", 0.0)
+		)
+
+	print("[NetworkManager] Playing sound:", sound_name, "at", position)
+	AudioManager.play_sound(sound_name, position)
+
 
 func send_message(message: Dictionary):
 	if connected:
