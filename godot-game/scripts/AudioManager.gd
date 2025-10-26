@@ -3,6 +3,7 @@ extends Node
 # Preload all your sounds here for fast access
 var sounds = {
 	"gunshot": preload("res://assets/sounds/fart_sound.mp3"),
+	"death": preload("res://assets/sounds/toilet_flush.mp3")
 	#"reload": preload("res://assets/sounds/reload.wav"),
 	#"hit": preload("res://assets/sounds/hit.wav"),
 	#"explosion": preload("res://assets/sounds/explosion.wav")

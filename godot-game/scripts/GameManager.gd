@@ -204,7 +204,13 @@ func _on_game_state_received(state: Dictionary):
 
 func _on_kill_received(killer_id: int, victim_id: int):
 	# Removed logging for performance
-
+	var victim = players[victim_id]
+	AudioManager.play_sound("death", victim.global_position)
+	network_manager.send_message({
+		"type": "play_sound",
+		"name": "death",
+		"position": {"x": victim.global_position.x, "y": victim.global_position.y}
+	})
 	if players.has(killer_id):
 		players[killer_id].kills += 1
 
