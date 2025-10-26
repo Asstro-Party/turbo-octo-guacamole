@@ -204,6 +204,7 @@ func _on_game_state_received(state: Dictionary):
 
 func _on_kill_received(killer_id: int, victim_id: int):
 	# Removed logging for performance
+	# Death sound effect
 	var victim = players[victim_id]
 	AudioManager.play_sound("death", victim.global_position)
 	network_manager.send_message({
@@ -211,6 +212,15 @@ func _on_kill_received(killer_id: int, victim_id: int):
 		"name": "death",
 		"position": {"x": victim.global_position.x, "y": victim.global_position.y}
 	})
+	# Death particle effect
+	var death_effect_scene = preload("res://scenes/effects/death_effect.tscn")
+	var effect = death_effect_scene.instantiate()
+	effect.global_position = victim.global_position
+	players_container.add_child(effect)
+	effect.emitting = true
+	# Free the node after its lifetime
+	effect.call_deferred("queue_free")
+	
 	if players.has(killer_id):
 		players[killer_id].kills += 1
 
