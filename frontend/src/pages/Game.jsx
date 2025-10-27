@@ -4,6 +4,7 @@ import { getLobby, leaveLobby } from '../services/api';
 import SpaceBackground from '../components/SpaceBackground';
 import SimplePeer from 'simple-peer';
 import { tuneOpusForLowBw, attachRemoteAudio, applySenderLowBwParams } from '../webrtc/opusConfig';
+import VoiceChat from '../services/voiceChat';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 
@@ -16,8 +17,10 @@ function Game({ user, token }) {
   const [playerModels, setPlayerModels] = useState({});
   const [localModel, setLocalModel] = useState('');
   const [loadingLobby, setLoadingLobby] = useState(true);
+  const [players, setPlayers] = useState([]);
 
   const wsRef = useRef(null);
+  const voiceChatRef = useRef(null);
   const localStreamRef = useRef(null);
   const peersRef = useRef({}); // peerId -> SimplePeer instance
   const peerAudioRef = useRef({}); // peerId -> HTMLAudioElement
@@ -108,7 +111,6 @@ function Game({ user, token }) {
     };
 
     wsRef.current = ws;
-    
     // Initialize voice chat
     voiceChatRef.current = new VoiceChat(ws, user.id);
   };
