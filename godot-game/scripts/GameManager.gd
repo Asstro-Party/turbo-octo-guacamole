@@ -41,8 +41,10 @@ func _ready():
 	network_manager.player_model_state_received.connect(_on_player_model_state_received)
 	network_manager.player_model_selected.connect(_on_player_model_selected)
 	network_manager.player_left_lobby.connect(_on_player_left_lobby)
-	spawn_moving_walls()
-	portal_spawn_timer = portal_spawn_interval
+	network_manager.walls_received.connect(_on_walls_received)           
+	network_manager.portals_received.connect(_on_portals_received)       
+	network_manager.portals_removed.connect(_on_portals_removed)  
+	network_manager.wall_destroyed.connect(_on_wall_destroyed)
 
 	# Connect return button
 	if return_button:
@@ -86,8 +88,16 @@ func _setup_from_web_params():
 		player_models[str(user_id)] = model_name
 		print("Local player model set to: ", model_name)
 
+func _on_player_died(killer_id: int, victim_id: int):
+	# Send kill event to server only if this client is the killer
+	if killer_id == local_player_id:
+		network_manager.send_kill(killer_id, victim_id, session_id)
+
 func spawn_player(player_id: int, username: String, is_local: bool):
+	print("[GameManager] spawn_player called - ID:", player_id, " username:", username, " is_local:", is_local)
+	
 	if players.has(player_id):
+		print("[GameManager] Player already exists:", player_id)
 		return
 
 	if not player_scene:
@@ -95,16 +105,22 @@ func spawn_player(player_id: int, username: String, is_local: bool):
 		return
 
 	var player = player_scene.instantiate()
+	var spawn_pos = _get_spawn_position(players.size())
+	print("[GameManager] Spawn position calculated:", spawn_pos)
+	
 	player.setup(player_id, is_local, network_manager)
 	player.name = "Player_" + str(player_id)
-	player.position = _get_spawn_position(players.size())
+	player.position = spawn_pos
+	print("[GameManager] Player position set to:", player.position)
+
+	player.player_died.connect(_on_player_died)
 
 	players_container.add_child(player)
 	players[player_id] = player
 
 	_apply_player_model(player_id)
 
-	print("Spawned player: ", username, " (", player_id, ")")
+	print("[GameManager] Spawned player successfully:", username, " at position:", player.position, " in scene tree:", player.is_inside_tree())
 
 func _get_spawn_position(index: int) -> Vector2:
 	var viewport_size = get_viewport().get_visible_rect().size
@@ -344,12 +360,6 @@ func _apply_player_model(player_id: int):
 
 	players[player_id].set_player_model(model_name)
 
-func _process(delta):
-	# Portal spawning logic
-	portal_spawn_timer -= delta
-	if portal_spawn_timer <= 0 and active_portals.is_empty():
-		spawn_portal_pair()
-		portal_spawn_timer = portal_spawn_interval
 
 func spawn_moving_walls():
 	var viewport_size = get_viewport().get_visible_rect().size
@@ -414,3 +424,79 @@ func destroy_portals():
 		if is_instance_valid(portal):
 			portal.queue_free()
 	active_portals.clear()
+
+func clear_walls():
+	for wall in moving_walls:
+		if is_instance_valid(wall):
+			wall.queue_free()
+	moving_walls.clear()
+	print("[GameManager] Cleared all walls")
+
+func _on_walls_received(walls_data: Array):
+	print("[GameManager] Received walls from server:", walls_data)
+	sync_walls_from_server(walls_data)
+
+func _on_portals_received(portals_data: Array):
+	print("[GameManager] Received portals from server:", portals_data)
+	spawn_portals_from_server(portals_data)
+
+func _on_portals_removed():
+	print("[GameManager] Server removed portals")
+	destroy_portals()
+
+func sync_walls_from_server(walls_data: Array):
+	clear_walls()
+	
+	for wall_data in walls_data:
+		if not moving_wall_scene:
+			print("Error: moving_wall_scene not set")
+			return
+		
+		var wall = moving_wall_scene.instantiate()
+		wall.position = Vector2(wall_data.position.x, wall_data.position.y)
+		wall.is_horizontal = wall_data.isHorizontal
+		wall.health = wall_data.health
+		wall.id = wall_data.id  
+		players_container.add_child(wall)
+		moving_walls.append(wall)
+	
+	print("[GameManager] Spawned", moving_walls.size(), "walls from server")
+
+func spawn_portals_from_server(portals_data: Array):
+	# Clear existing portals
+	destroy_portals()
+	
+	if portals_data.size() < 2:
+		print("[GameManager] Not enough portal data:", portals_data.size())
+		return
+	
+	if not portal_scene:
+		print("Error: portal_scene not set")
+		return
+	
+	var portal1 = portal_scene.instantiate()
+	portal1.position = Vector2(portals_data[0]["position"]["x"], portals_data[0]["position"]["y"])
+	players_container.add_child(portal1)
+	
+	var portal2 = portal_scene.instantiate()
+	portal2.position = Vector2(portals_data[1]["position"]["x"], portals_data[1]["position"]["y"])
+	players_container.add_child(portal2)
+	
+	portal1.link_to(portal2)
+	active_portals = [portal1, portal2]
+	
+	print("[GameManager] Spawned portal pair from server at:", portal1.position, portal2.position)
+
+func _on_wall_destroyed(wall_id: int):
+	print("[GameManager] Removing destroyed wall:", wall_id)
+	
+	# Find and remove the wall from the scene
+	for i in range(moving_walls.size() - 1, -1, -1):
+		var wall = moving_walls[i]
+		if wall and wall.id == wall_id:
+			print("[GameManager] Found wall", wall_id, "in scene, removing it")
+			wall.queue_free()
+			moving_walls.remove_at(i)
+			return
+	
+	print("[GameManager] Warning: Wall", wall_id, "not found in scene")

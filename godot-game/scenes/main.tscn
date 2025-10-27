@@ -1,9 +1,11 @@
-[gd_scene load_steps=20 format=3 uid="uid://bx4v3vf5w1h1u"]
+[gd_scene load_steps=22 format=3 uid="uid://bx4v3vf5w1h1u"]
 
 [ext_resource type="Texture2D" uid="uid://1nimp58iy7s2" path="res://assets/background/space.png" id="1_jyhfs"]
 [ext_resource type="Script" uid="uid://1m4cb6f55a0t" path="res://scripts/GameManager.gd" id="1_sugp2"]
 [ext_resource type="PackedScene" uid="uid://bgderjbosrs3f" path="res://scenes/player.tscn" id="2_jyhfs"]
 [ext_resource type="Script" uid="uid://cmua45rpdr86x" path="res://scripts/NetworkManager.gd" id="3_tbgi4"]
+[ext_resource type="PackedScene" uid="uid://d4mtnbkvngrhd" path="res://scenes/moving_wall.tscn" id="4_tefeu"]
+[ext_resource type="PackedScene" uid="uid://camxeykrpfr3h" path="res://scenes/portal.tscn" id="5_o6xl0"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_jyhfs"]
 atlas = ExtResource("1_jyhfs")
@@ -119,6 +121,7 @@ corner_radius_bottom_left = 16
 [node name="Main" type="Node2D"]
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+z_index = -100
 sprite_frames = SubResource("SpriteFrames_a8y0u")
 autoplay = "default"
 centered = false
@@ -128,6 +131,8 @@ centered = false
 [node name="GameManager" type="Node" parent="."]
 script = ExtResource("1_sugp2")
 player_scene = ExtResource("2_jyhfs")
+moving_wall_scene = ExtResource("4_tefeu")
+portal_scene = ExtResource("5_o6xl0")
 
 [node name="Players" type="Node2D" parent="GameManager"]
 

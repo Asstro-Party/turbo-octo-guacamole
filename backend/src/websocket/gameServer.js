@@ -45,9 +45,21 @@ export function setupWebSocketServer(wss) {
             currentUserId = message.userId;
             break;
 
-              case 'player_input':
-                handlePlayerInput(ws, message, currentLobbyId);
-                break;
+          case 'player_input':
+            handlePlayerInput(ws, message, currentLobbyId);
+            break;
+
+          case 'player_teleported':
+            // Handle player teleportation from portal
+            if (currentLobbyId && message.userId) {
+              const state = gameStates.get(currentLobbyId);
+              if (state && state.players && state.players[message.userId]) {
+                state.players[message.userId].position.x = message.position.x;
+                state.players[message.userId].position.y = message.position.y;
+                console.log(`[${currentLobbyId}] Player ${message.userId} teleported to (${message.position.x}, ${message.position.y})`);
+              }
+            }
+            break;
 
           case 'kill':
             await handleKill(message, currentLobbyId);
@@ -116,6 +128,39 @@ export function setupWebSocketServer(wss) {
   });
 }
 
+function initializeGameState(lobbyId) {
+  if (gameStates.has(lobbyId)) return gameStates.get(lobbyId);
+  
+  const state = {
+    players: {},
+    bullets: [],
+    walls: [
+      // Top corridor walls
+      { id: 0, position: { x: 320, y: 180 }, health: 100, isHorizontal: true },
+      { id: 1, position: { x: 960, y: 180 }, health: 100, isHorizontal: true },
+      
+      // Middle section - create a maze-like structure
+      { id: 2, position: { x: 200, y: 360 }, health: 100, isHorizontal: false },
+      { id: 3, position: { x: 480, y: 360 }, health: 100, isHorizontal: false },
+      { id: 4, position: { x: 800, y: 360 }, health: 100, isHorizontal: false },
+      { id: 5, position: { x: 1080, y: 360 }, health: 100, isHorizontal: false },
+      
+      // Bottom corridor walls
+      { id: 6, position: { x: 320, y: 540 }, health: 100, isHorizontal: true },
+      { id: 7, position: { x: 960, y: 540 }, health: 100, isHorizontal: true },
+      
+      // Center obstacles
+      { id: 8, position: { x: 640, y: 240 }, health: 100, isHorizontal: true },
+      { id: 9, position: { x: 640, y: 480 }, health: 100, isHorizontal: true }
+    ],
+    portals: [],
+    lastPortalSpawn: Date.now()
+  };
+  
+  gameStates.set(lobbyId, state);
+  return state;
+}
+
 async function handleJoinGame(ws, message, wss) {
   const { lobbyId, userId, username } = message;
 
@@ -126,35 +171,45 @@ async function handleJoinGame(ws, message, wss) {
   connections.get(lobbyId).add(ws);
   userSockets.set(userId, ws);
 
+  const state = initializeGameState(lobbyId);
 
-  // Initialize game state for this lobby if not present
-  if (!gameStates.has(lobbyId)) {
-    gameStates.set(lobbyId, { players: {}, bullets: [] });
-  }
-  // Add player to game state if not present
-  const state = gameStates.get(lobbyId);
+  // Get lobby to determine player order
+  const lobby = await getLobby(lobbyId);
+  const playerList = lobby && lobby.players ? lobby.players : [userId];
+
   if (!state.players[userId]) {
+    // Define fixed spawn positions for 4 players
+    const spawnPositions = [
+      { x: 200, y: 150 },   // Player 1: Top-Left
+      { x: 1080, y: 150 },  // Player 2: Top-Right
+      { x: 1080, y: 570 },  // Player 3: Bottom-Right
+      { x: 200, y: 570 }    // Player 4: Bottom-Left
+    ];
+    
+    const spawnIndex = playerList.indexOf(userId); 
+    const spawnPos = spawnPositions[spawnIndex];
+    
     state.players[userId] = {
-      position: { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 },
+      position: { x: spawnPos.x, y: spawnPos.y },
       rotation: 0,
       velocity: { x: 0, y: 0 },
       health: 100,
       speed: 200,
-      username,
       kills: 0,
-      deaths: 0
+      deaths: 0,
+      username: username
     };
+    console.log(`[gameServer] Initialized player ${userId} at spawn ${spawnIndex + 1} (${spawnPos.x}, ${spawnPos.y})`);
   }
-  // Get full player list for this lobby
-  const lobby = await getLobby(lobbyId);
-  const playerList = lobby && lobby.players ? lobby.players : [userId];
 
   // Send confirmation and player list to the joining player
   ws.send(JSON.stringify({
     type: 'joined',
     lobbyId,
     userId,
-    players: playerList
+    players: playerList,
+    walls: state.walls,      
+    portals: state.portals   
   }));
 
   // Broadcast to all players in lobby
@@ -215,6 +270,10 @@ function handlePlayerInput(ws, message, lobbyId) {
       if (shooter) {
         const pos = message.input.shoot.position;
         const rot = message.input.shoot.rotation;
+        if (!isFinite(rot) || isNaN(rot)) {
+          console.warn('Invalid rotation received from client:', rot);
+          return; // Don't create bullet with invalid rotation
+        }
         const speed = 600;
         const bulletObj = {
           id: bulletId,
@@ -233,6 +292,32 @@ function handlePlayerInput(ws, message, lobbyId) {
 // Game configuration
 const GAME_WIDTH = 1280;
 const GAME_HEIGHT = 720;
+
+// Collision detection constants
+const PLAYER_RADIUS = 25;
+const WALL_WIDTH = 40;
+const WALL_HEIGHT = 100;
+const BULLET_RADIUS = 10;
+
+/**
+ * Check if a circle collides with a rectangle (AABB collision)
+ * @param {Object} circle - {x, y, radius}
+ * @param {Object} rect - {x, y, width, height}
+ * @returns {boolean}
+ */
+function checkCircleRectCollision(circle, rect) {
+  // Find the closest point on the rectangle to the circle's center
+  const closestX = Math.max(rect.x - rect.width / 2, Math.min(circle.x, rect.x + rect.width / 2));
+  const closestY = Math.max(rect.y - rect.height / 2, Math.min(circle.y, rect.y + rect.height / 2));
+  
+  // Calculate distance between circle's center and this closest point
+  const distanceX = circle.x - closestX;
+  const distanceY = circle.y - closestY;
+  const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+  
+  // Collision occurs if distance is less than circle's radius
+  return distanceSquared < (circle.radius * circle.radius);
+}
 
 // Main game loop for all lobbies
 // Calculates new player positions, handles collisions, and broadcasts state
@@ -264,13 +349,73 @@ setInterval(() => {
         if (typeof input.rotation === 'number') {
           const rotationSpeed = player.rotationSpeed || Math.PI; // radians/sec
           player.rotation += input.rotation * rotationSpeed * dt;
+          
+          // Normalize rotation to prevent infinity (keep between -2π and 2π)
+          const TWO_PI = Math.PI * 2;
+          while (player.rotation > TWO_PI) player.rotation -= TWO_PI;
+          while (player.rotation < -TWO_PI) player.rotation += TWO_PI;
+          
+          // Ensure it's a valid number
+          if (!isFinite(player.rotation)) {
+            player.rotation = 0;
+          }
         }
       }
-
       // Always apply forward velocity in direction of player.rotation
       const forwardSpeed = player.forwardSpeed || player.speed * 0.5;
-      player.position.x += Math.cos(player.rotation) * forwardSpeed * dt;
-      player.position.y += Math.sin(player.rotation) * forwardSpeed * dt;
+
+      // Calculate new position
+      const newX = player.position.x + Math.cos(player.rotation) * forwardSpeed * dt;
+      const newY = player.position.y + Math.sin(player.rotation) * forwardSpeed * dt;
+      
+      // Check collision with walls
+      let canMove = true;
+      if (state.walls && state.walls.length > 0) {
+        for (const wall of state.walls) {
+          if (!wall || wall.health <= 0) continue;
+          
+          const collision = checkCircleRectCollision(
+            { x: newX, y: newY, radius: PLAYER_RADIUS },
+            { x: wall.position.x, y: wall.position.y, width: WALL_WIDTH, height: WALL_HEIGHT }
+          );
+          
+          if (collision) {
+            canMove = false;
+            break;
+          }
+        }
+      }
+      
+      // Only update position if no collision
+      if (canMove) {
+        player.position.x = newX;
+        player.position.y = newY;
+      } else {
+        // Player hit a wall, keep old position
+        stateChanged = true; // Still mark as changed to sync clients
+      }
+      // Defensive: ensure player has position, rotation, and speed
+      if (!player.position) player.position = { x: 100, y: 100 };
+      if (typeof player.rotation !== 'number') player.rotation = 0;
+      if (typeof player.speed !== 'number') player.speed = 200;
+
+      if (input) {
+        // Apply incremental clockwise rotation if present
+        if (typeof input.rotation === 'number') {
+          const rotationSpeed = player.rotationSpeed || Math.PI; // radians/sec
+          player.rotation += input.rotation * rotationSpeed * dt;
+          
+          // Normalize rotation to prevent infinity (keep between -2π and 2π)
+          const TWO_PI = Math.PI * 2;
+          while (player.rotation > TWO_PI) player.rotation -= TWO_PI;
+          while (player.rotation < -TWO_PI) player.rotation += TWO_PI;
+          
+          // Ensure it's a valid number
+          if (!isFinite(player.rotation)) {
+            player.rotation = 0;
+          }
+        }
+      }
 
       // Wrap around screen edges
       player.position.x = (player.position.x + GAME_WIDTH) % GAME_WIDTH;
@@ -292,6 +437,47 @@ setInterval(() => {
       const bullet = state.bullets[readIdx];
       bullet.position.x += bullet.velocity.x * dt;
       bullet.position.y += bullet.velocity.y * dt;
+
+      // CHECK BULLET-WALL COLLISION
+      let bulletHitWall = false;
+      if (state.walls && state.walls.length > 0) {
+        for (let wi = state.walls.length - 1; wi >= 0; wi--) {
+          const wall = state.walls[wi];
+          if (!wall || wall.health <= 0) continue;
+          
+          const collision = checkCircleRectCollision(
+            { x: bullet.position.x, y: bullet.position.y, radius: BULLET_RADIUS },
+            { x: wall.position.x, y: wall.position.y, width: WALL_WIDTH, height: WALL_HEIGHT }
+          );
+          
+          if (collision) {
+            // Damage the wall
+            wall.health -= 25; // Same as bullet damage
+            console.log(`[${lobbyId}] Bullet hit wall ${wi}, health: ${wall.health}`);
+            
+            // Remove wall if destroyed
+            if (wall.health <= 0) {
+              console.log(`[${lobbyId}] Wall ${wall.id} destroyed!`);
+              
+              // Broadcast wall destruction
+              broadcast(lobbyId, {
+                type: 'wall_destroyed',
+                wallId: wall.id
+              });
+              
+              state.walls.splice(wi, 1);
+            }
+            
+            bulletHitWall = true;
+            stateChanged = true;
+            break;
+          }
+        }
+      }
+      
+      if (bulletHitWall) {
+        continue; // Skip this bullet (effectively removes it)
+      }
 
       // Remove bullets that go off screen or are too old
       if (bullet.position.x < 0 || bullet.position.x > GAME_WIDTH ||
@@ -368,8 +554,19 @@ setInterval(() => {
               // Respawn player (reset health and reuse position object)
               player.health = 100;
               if (!player.position) player.position = { x: 0, y: 0 };
-              player.position.x = Math.random() * 400 + 100;
-              player.position.y = Math.random() * 400 + 100;
+              
+              // Use fixed spawn positions
+              const spawnPositions = [
+                { x: 200, y: 150 },   // Top-Left
+                { x: 1080, y: 150 },  // Top-Right
+                { x: 1080, y: 570 },  // Bottom-Right
+                { x: 200, y: 570 }    // Bottom-Left
+              ];
+              const playerIds = Object.keys(state.players);
+              const playerIndex = playerIds.indexOf(String(pid));
+              const spawnPos = spawnPositions[playerIndex % 4];
+              player.position.x = spawnPos.x;
+              player.position.y = spawnPos.y;
             }
           }
 
@@ -381,6 +578,58 @@ setInterval(() => {
       
       // If bullet was removed by hit, skip to next bullet
       if (bulletHit) continue;
+    }
+    
+    // Only broadcast if state changed or every 3rd tick to reduce network load
+    // Portal spawning logic - spawn every 20 seconds if no portals exist
+    const PORTAL_SPAWN_INTERVAL = 20000; // 20 seconds
+    const PORTAL_LIFETIME = 15000; // 15 seconds
+    
+    if (!state.portals) state.portals = [];
+    if (!state.lastPortalSpawn) state.lastPortalSpawn = now;
+
+    if (state.portals.length === 0 && now - state.lastPortalSpawn > PORTAL_SPAWN_INTERVAL) {
+      // Spawn portal pair
+      const portal1 = {
+        id: 0,
+        position: {
+          x: Math.random() * (GAME_WIDTH - 300) + 150,
+          y: Math.random() * (GAME_HEIGHT - 300) + 150
+        }
+      };
+      
+      const portal2 = {
+        id: 1,
+        position: {
+          x: Math.random() * (GAME_WIDTH - 300) + 150,
+          y: Math.random() * (GAME_HEIGHT - 300) + 150
+        }
+      };
+      
+      state.portals = [portal1, portal2];
+      state.lastPortalSpawn = now;
+      stateChanged = true;
+      
+      console.log(`[${lobbyId}] Spawned portals at:`, portal1.position, portal2.position);
+      
+      // Broadcast portal spawn immediately
+      broadcast(lobbyId, {
+        type: 'portals_spawned',
+        portals: state.portals
+      });
+      
+      // Schedule portal removal after 15 seconds
+      setTimeout(() => {
+        if (gameStates.has(lobbyId)) {
+          const currentState = gameStates.get(lobbyId);
+          currentState.portals = [];
+          console.log(`[${lobbyId}] Removed portals`);
+          
+          broadcast(lobbyId, {
+            type: 'portals_removed'
+          });
+        }
+      }, PORTAL_LIFETIME);
     }
     
     // Only broadcast if state changed or every 3rd tick to reduce network load
