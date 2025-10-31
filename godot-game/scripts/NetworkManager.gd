@@ -18,6 +18,10 @@ signal game_over_received(winner_id, results, host_user_id)
 signal player_model_state_received(player_models)
 signal player_model_selected(user_id, model, player_models)
 signal player_left_lobby(user_id, model)
+signal walls_received(walls)           # ADD THIS
+signal portals_received(portals)       # ADD THIS
+signal portals_removed()               # ADD THIS
+signal wall_destroyed(wall_id)
 
 var lobby_id = ""
 var user_id = 0
@@ -79,12 +83,28 @@ func _handle_message(data: Dictionary):
 	match data.get("type", ""):
 		"joined":
 			print("[NetworkManager] Successfully joined game")
+						# Handle walls and portals from server
+			if data.has("walls"):
+				walls_received.emit(data["walls"])
+			if data.has("portals") and data["portals"].size() > 0:
+				portals_received.emit(data["portals"])
 			if data.has("players"):
 				for pid in data["players"]:
 					if int(pid) != user_id:
 						player_joined.emit(int(pid), "Player" + str(pid))
-		"player_joined":
-			player_joined.emit(data.get("userId"), data.get("username"))
+		
+		"portals_spawned":
+			print("[NetworkManager] Server spawned portals:", data.get("portals"))
+			portals_received.emit(data.get("portals", []))
+		
+		"portals_removed":
+			print("[NetworkManager] Server removed portals")
+			portals_removed.emit()
+
+		"wall_destroyed":  
+			print("[NetworkManager] Server destroyed wall:", data.get("wallId"))
+			wall_destroyed.emit(data.get("wallId"))
+			
 		"game_started":
 			game_started.emit()
 		"game_state":

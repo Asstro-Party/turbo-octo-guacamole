@@ -4,6 +4,7 @@ import { getLobby, leaveLobby } from '../services/api';
 import SpaceBackground from '../components/SpaceBackground';
 import SimplePeer from 'simple-peer';
 import { tuneOpusForLowBw, attachRemoteAudio, applySenderLowBwParams } from '../webrtc/opusConfig';
+import VoiceChat from '../services/voiceChat';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 
@@ -16,8 +17,10 @@ function Game({ user, token }) {
   const [playerModels, setPlayerModels] = useState({});
   const [localModel, setLocalModel] = useState('');
   const [loadingLobby, setLoadingLobby] = useState(true);
+  const [players, setPlayers] = useState([]);
 
   const wsRef = useRef(null);
+  const voiceChatRef = useRef(null);
   const localStreamRef = useRef(null);
   const peersRef = useRef({}); // peerId -> SimplePeer instance
   const peerAudioRef = useRef({}); // peerId -> HTMLAudioElement
@@ -43,6 +46,15 @@ function Game({ user, token }) {
       setPlayerModels(models);
       const key = String(user.id);
       setLocalModel(models[key] || '');
+      
+      // Initialize players list from lobby
+      if (response.data.players) {
+        const playersList = response.data.players.map(playerId => ({
+          id: playerId,
+          username: `Player ${playerId}`
+        }));
+        setPlayers(playersList);
+      }
     } catch (err) {
       console.error('Failed to load lobby:', err);
     } finally {
@@ -99,11 +111,41 @@ function Game({ user, token }) {
     };
 
     wsRef.current = ws;
+    // Initialize voice chat
+    voiceChatRef.current = new VoiceChat(ws, user.id);
   };
 
   // ------------------ GAME MESSAGES ------------------
   const handleGameMessage = (message) => {
     switch (message.type) {
+      case 'joined':
+        if (message.players) {
+          const playersList = message.players.map(playerId => ({
+            id: playerId,
+            username: `Player ${playerId}`
+          }));
+          setPlayers(playersList);
+        }
+        break;
+
+      case 'player_joined':
+        setPlayers(prev => {
+          const exists = prev.some(p => p.id === message.userId);
+          if (!exists) {
+            const newPlayer = { id: message.userId, username: message.username };
+            
+            // If voice is enabled, connect to new player
+            if (voiceEnabled && voiceChatRef.current) {
+              voiceChatRef.current.connectToPeer(message.userId);
+            }
+            
+            return [...prev, newPlayer];
+          }
+          return prev;
+        });
+        sendToGodot(message);
+        break;
+
       case 'player_model_state': {
         const models = message.playerModels || {};
         setPlayerModels(models);
@@ -114,6 +156,7 @@ function Game({ user, token }) {
         sendToGodot(message);
         break;
       }
+
       case 'player_model_selected': {
         if (message.playerModels) {
           setPlayerModels(message.playerModels);
@@ -130,7 +173,9 @@ function Game({ user, token }) {
         sendToGodot(message);
         break;
       }
+
       case 'player_left': {
+        setPlayers(prev => prev.filter(p => p.id !== message.userId));
         setPlayerModels((prev) => {
           const updated = { ...prev };
           delete updated[String(message.userId)];
@@ -139,8 +184,7 @@ function Game({ user, token }) {
         sendToGodot(message);
         break;
       }
-      case 'joined':
-      case 'player_joined':
+
       case 'game_started':
       case 'game_state':
       case 'player_action':
@@ -152,9 +196,11 @@ function Game({ user, token }) {
           setTimeout(() => navigate('/lobby'), 3000);
         }
         break;
+
       case 'return_to_waiting':
         navigate(`/waiting/${lobbyId}`);
         break;
+
       default:
         break;
     }

@@ -23,14 +23,25 @@ var _default_texture: Texture2D = null
 @onready var gun = $Gun if has_node("Gun") else null
 
 signal player_shot()
+signal player_died(killer_id: int, victim_id: int)
 
 func _ready():
 	# Set player color based on ID
 	modulate = player_color
 	if sprite:
 		_default_texture = sprite.texture
+		print("[Player] Sprite found and loaded")
+	else:
+		print("[Player] ERROR: Sprite not found!")
+	
+	if gun:
+		print("[Player] Gun node found")
+	else:
+		print("[Player] WARNING: Gun node not found!")
+
 	if player_model != "":
 		_apply_player_model(player_model)
+	
 
 func setup(p_player_id: int, p_is_local: bool, p_network_manager = null):
 	player_id = p_player_id
@@ -75,6 +86,12 @@ func shoot():
 
 	# Reset cooldown
 	_shoot_cooldown = fire_rate
+
+	# Validate rotation before sending
+	var valid_rotation = rotation
+	if not is_finite(rotation) or is_nan(rotation):
+		valid_rotation = 0.0
+		print("Warning: Invalid rotation detected, resetting to 0")
 
 	# Send shoot input to server if connected
 	if network_manager and network_manager.connected:
@@ -149,3 +166,7 @@ func _apply_player_model(model_name: String):
 
 	if _default_texture:
 		sprite.texture = _default_texture
+
+func teleport(new_position: Vector2):
+	position = new_position
+	# Optional: visual effect or invincibility frames
