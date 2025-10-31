@@ -21,7 +21,9 @@ function WaitingRoom({ user }) {
   const [playerModels, setPlayerModels] = useState({});
   const [selectionError, setSelectionError] = useState('');
   const [selectingModel, setSelectingModel] = useState(false);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const wsRef = useRef(null);
+  const audioRef = useRef(null);
   const userKey = user ? String(user.id) : '';
 
   useEffect(() => {
@@ -56,7 +58,6 @@ function WaitingRoom({ user }) {
         }
       }
       if (message.type === 'return_to_waiting') {
-        // Refresh lobby data when returning from game
         loadLobby();
         if (message.playerModels) {
           setPlayerModels(message.playerModels);
@@ -64,11 +65,46 @@ function WaitingRoom({ user }) {
       }
     };
     wsRef.current = ws;
+
+    // Initialize audio
+    audioRef.current = new Audio('/audio/lobby-bgm.mp3');
+    audioRef.current.loop = true;
+    audioRef.current.volume = 0.07;
+
+    // Try to play music (requires user interaction first)
+    const playMusic = () => {
+      if (audioRef.current && !isMusicPlaying) {
+        audioRef.current.play()
+          .then(() => setIsMusicPlaying(true))
+          .catch(err => console.log('Music autoplay prevented:', err));
+      }
+    };
+
+    // Attempt to play on user interaction
+    document.addEventListener('click', playMusic, { once: true });
+
     return () => {
       if (wsRef.current) wsRef.current.close();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      document.removeEventListener('click', playMusic);
     };
-    // eslint-disable-next-line
   }, [lobbyId]);
+
+  const toggleMusic = () => {
+    if (audioRef.current) {
+      if (isMusicPlaying) {
+        audioRef.current.pause();
+        setIsMusicPlaying(false);
+      } else {
+        audioRef.current.play()
+          .then(() => setIsMusicPlaying(true))
+          .catch(err => console.error('Failed to play music:', err));
+      }
+    }
+  };
 
   const loadLobby = async () => {
     try {
@@ -144,9 +180,22 @@ function WaitingRoom({ user }) {
     <SpaceBackground contentClassName="py-14">
       <div className="w-full max-w-3xl rounded-3xl border border-white/10 bg-slate-900/25 p-10 shadow-glass-lg backdrop-blur-2xl">
         <div className="text-center">
-          <h2 className="text-2xl font-semibold uppercase tracking-[0.35em] text-slate-100">
-            Lobby <span className="rounded-xl bg-slate-900/60 px-3 py-1 text-xs font-normal uppercase tracking-[0.4em] text-slate-300/80">{lobbyId.substring(0, 8)}</span>
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-semibold uppercase tracking-[0.35em] text-slate-100">
+              Lobby <span className="rounded-xl bg-slate-900/60 px-3 py-1 text-xs font-normal uppercase tracking-[0.4em] text-slate-300/80">{lobbyId.substring(0, 8)}</span>
+            </h2>
+            <button
+              onClick={toggleMusic}
+              className={`rounded-2xl border px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] transition ${
+                isMusicPlaying
+                  ? 'border-emerald-300/60 bg-emerald-300/10 text-emerald-200'
+                  : 'border-white/15 bg-slate-900/40 text-slate-200 hover:border-sky-400/60'
+              }`}
+              title={isMusicPlaying ? 'Music On' : 'Music Off'}
+            >
+              {isMusicPlaying ? '🔊' : '🔇'}
+            </button>
+          </div>
           <p className="mt-4 text-xs uppercase tracking-[0.3em] text-slate-300/75">
             Pick your pilot, then wait for the launch signal.
           </p>
