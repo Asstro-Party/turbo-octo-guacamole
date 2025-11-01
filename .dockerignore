@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+.env.local
+.DS_Store
+*.log
+frontend/
+godot-game/
+docs/
+.git
+.gitignore

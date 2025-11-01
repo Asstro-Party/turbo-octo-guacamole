@@ -1,4 +1,4 @@
-# Root-level Dockerfile for Railway (if root directory cannot be changed)
+# Root-level Dockerfile for Railway
 FROM node:20-alpine
 
 # Set working directory
