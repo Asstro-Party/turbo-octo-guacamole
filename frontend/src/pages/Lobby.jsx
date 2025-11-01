@@ -8,9 +8,11 @@ function Lobby({ user, token, onLogout }) {
   const [lobbies, setLobbies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const navigate = useNavigate();
 
   const wsRef = useRef(null);
+  const audioRef = useRef(null);
 
   useEffect(() => {
     loadLobbies();
@@ -29,11 +31,46 @@ function Lobby({ user, token, onLogout }) {
     ws.onerror = () => {};
     wsRef.current = ws;
 
+    // Initialize audio
+    audioRef.current = new Audio('/audio/lobby-bgm.mp3');
+    audioRef.current.loop = true;
+    audioRef.current.volume = 0.07;
+
+    // Try to play music (requires user interaction first)
+    const playMusic = () => {
+      if (audioRef.current && !isMusicPlaying) {
+        audioRef.current.play()
+          .then(() => setIsMusicPlaying(true))
+          .catch(err => console.log('Music autoplay prevented:', err));
+      }
+    };
+
+    // Attempt to play on user interaction
+    document.addEventListener('click', playMusic, { once: true });
+
     return () => {
       clearInterval(interval);
       if (wsRef.current) wsRef.current.close();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      document.removeEventListener('click', playMusic);
     };
   }, []);
+
+  const toggleMusic = () => {
+    if (audioRef.current) {
+      if (isMusicPlaying) {
+        audioRef.current.pause();
+        setIsMusicPlaying(false);
+      } else {
+        audioRef.current.play()
+          .then(() => setIsMusicPlaying(true))
+          .catch(err => console.error('Failed to play music:', err));
+      }
+    }
+  };
 
   const loadLobbies = async () => {
     try {
@@ -78,6 +115,17 @@ function Lobby({ user, token, onLogout }) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={toggleMusic}
+              className={`rounded-2xl border px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] transition ${
+                isMusicPlaying
+                  ? 'border-emerald-300/60 bg-emerald-300/10 text-emerald-200'
+                  : 'border-white/15 bg-slate-900/40 text-slate-200 hover:border-sky-400/60'
+              }`}
+              title={isMusicPlaying ? 'Music On' : 'Music Off'}
+            >
+              {isMusicPlaying ? '🔊' : '🔇'}
+            </button>
             <button
               onClick={() => navigate('/profile')}
               className="rounded-2xl border border-white/15 bg-slate-900/40 px-5 py-3 text-xs font-semibold uppercase tracking-[0.32em] text-slate-200 transition hover:border-sky-400/60 hover:text-white"

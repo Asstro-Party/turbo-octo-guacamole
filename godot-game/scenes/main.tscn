@@ -1,4 +1,4 @@
-[gd_scene load_steps=22 format=3 uid="uid://bx4v3vf5w1h1u"]
+[gd_scene load_steps=23 format=3 uid="uid://bx4v3vf5w1h1u"]
 
 [ext_resource type="Texture2D" uid="uid://1nimp58iy7s2" path="res://assets/background/space.png" id="1_jyhfs"]
 [ext_resource type="Script" uid="uid://1m4cb6f55a0t" path="res://scripts/GameManager.gd" id="1_sugp2"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" uid="uid://cmua45rpdr86x" path="res://scripts/NetworkManager.gd" id="3_tbgi4"]
 [ext_resource type="PackedScene" uid="uid://d4mtnbkvngrhd" path="res://scenes/moving_wall.tscn" id="4_tefeu"]
 [ext_resource type="PackedScene" uid="uid://camxeykrpfr3h" path="res://scenes/portal.tscn" id="5_o6xl0"]
+[ext_resource type="AudioStream" uid="uid://cpf4nscwfnw8o" path="res://assets/sounds/game_bgm.mp3" id="7_o6xl0"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_jyhfs"]
 atlas = ExtResource("1_jyhfs")
@@ -286,3 +287,9 @@ text = "RETURN TO WAITING ROOM"
 [node name="Spacer6" type="Control" parent="CanvasLayer/Control/GameOverScreen/Panel/VBoxContainer"]
 custom_minimum_size = Vector2(0, 10)
 layout_mode = 2
+
+[node name="AudioStreamPlayer2D" type="AudioStreamPlayer2D" parent="."]
+stream = ExtResource("7_o6xl0")
+volume_db = -8.607
+autoplay = true
+parameters/looping = false

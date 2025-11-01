@@ -95,6 +95,13 @@ func shoot():
 
 	# Send shoot input to server if connected
 	if network_manager and network_manager.connected:
+		if is_local_player:
+			AudioManager.play_sound("gunshot", global_position)
+			network_manager.send_message({
+				"type": "play_sound",
+				"name": "gunshot",
+				"position": {"x": global_position.x, "y": global_position.y}
+			})
 		network_manager.send_player_input({
 			"shoot": {
 				"position": {"x": gun.global_position.x, "y": gun.global_position.y},
