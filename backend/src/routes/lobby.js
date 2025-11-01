@@ -125,6 +125,14 @@ router.post('/:lobbyId/join', authenticate, async (req, res) => {
       [lobby.currentPlayers, lobbyId]
     );
 
+    // Broadcast to all players in the lobby that someone joined
+    broadcast(lobbyId, {
+      type: 'player_joined_lobby',
+      lobbyId,
+      userId,
+      lobby
+    });
+
     res.json(lobby);
     broadcastLobbyListUpdate();
 

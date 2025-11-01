@@ -37,7 +37,7 @@ function WaitingRoom({ user }) {
     };
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      if (message.type === 'player_joined' || message.type === 'player_left') {
+      if (message.type === 'player_joined' || message.type === 'player_joined_lobby' || message.type === 'player_left') {
         loadLobby();
       }
       if (message.type === 'game_started') {
