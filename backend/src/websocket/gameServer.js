@@ -1201,14 +1201,23 @@ export async function handleVoiceSignal({ roomId, fromUserId, toUserId, data }) 
 }
 
 function broadcast(lobbyId, message, excludeWs = null) {
-  if (!connections.has(lobbyId)) return;
+  console.log(`[Broadcast] Attempting to broadcast ${message.type} to lobby ${lobbyId}`);
+  console.log(`[Broadcast] Connections for lobby ${lobbyId}:`, connections.has(lobbyId) ? connections.get(lobbyId).size : 0);
+
+  if (!connections.has(lobbyId)) {
+    console.log(`[Broadcast] No connections found for lobby ${lobbyId}`);
+    return;
+  }
 
   const data = JSON.stringify(message);
+  let sentCount = 0;
   connections.get(lobbyId).forEach((client) => {
     if (client !== excludeWs && client.readyState === 1) { // OPEN state
       client.send(data);
+      sentCount++;
     }
   });
+  console.log(`[Broadcast] Sent ${message.type} to ${sentCount} client(s) in lobby ${lobbyId}`);
 }
 
 // Broadcast to all connected clients (for lobby list updates)
