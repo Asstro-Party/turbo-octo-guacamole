@@ -14,7 +14,6 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const WS_PORT = process.env.WS_PORT || 3001;
 
 // Middleware
 // Support multiple CORS origins (comma-separated)
@@ -62,18 +61,16 @@ async function startServer() {
     await connectDB();
     await connectRedis();
 
-    // Start HTTP server
-    app.listen(PORT, () => {
-      console.log(`🚀 HTTP Server running on port ${PORT}`);
-    });
+    // Create HTTP server with Express app
+    const httpServer = createServer(app);
 
-    // Start WebSocket server for game networking
-    const httpServer = createServer();
+    // Attach WebSocket server to the same HTTP server
     const wss = new WebSocketServer({ server: httpServer });
     setupWebSocketServer(wss);
 
-    httpServer.listen(WS_PORT, () => {
-      console.log(`🎮 WebSocket Server running on port ${WS_PORT}`);
+    // Start combined HTTP + WebSocket server on one port
+    httpServer.listen(PORT, () => {
+      console.log(`🚀 HTTP + WebSocket Server running on port ${PORT}`);
     });
 
   } catch (error) {
