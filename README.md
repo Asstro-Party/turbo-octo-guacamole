@@ -125,8 +125,24 @@ turbo-octo-guacamole/
 3. Export to Web (Project → Export)
 4. Copy to `frontend/public/godot-game/`
 
+## Deployment
+
+Ready to deploy your game to production? We've got you covered!
+
+### 📦 Deployment Guides
+
+- **[Quick Start Guide](DEPLOYMENT-QUICK-START.md)** - 5-minute deployment (Vercel + Railway)
+- **[Full Deployment Guide](DEPLOYMENT.md)** - Complete step-by-step instructions
+
+**Cost:** 100% FREE using Vercel (frontend) + Railway (backend + databases)
+
+**No Docker required** - Both platforms handle deployment automatically!
+
+---
+
 ## Configuration Notes
 
-- **PostgreSQL Port:** 5433
+- **PostgreSQL Port:** 5433 (local), auto-configured on Railway
 - **WebSocket Port:** 3001
 - **Frontend Dev Server:** 5173
+- **Backend API Port:** 3000
