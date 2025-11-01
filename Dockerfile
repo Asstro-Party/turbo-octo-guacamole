@@ -1,14 +1,14 @@
 # Root-level Dockerfile for Railway (if root directory cannot be changed)
-FROM node:18-alpine
+FROM node:20-alpine
 
 # Set working directory
 WORKDIR /app
 
-# Copy backend package files
-COPY backend/package*.json ./
+# Copy backend package files (including package-lock.json)
+COPY backend/package.json backend/package-lock.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 
 # Copy backend source code
 COPY backend/ ./
