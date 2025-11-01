@@ -218,6 +218,7 @@ function Game({ user, token }) {
       lobbyId,
       userId: user.id,
       username: user.username,
+      wsUrl: WS_URL,
     });
     if (localModel) params.append('playerModel', localModel);
     return `/godot-game/index.html?${params.toString()}`;

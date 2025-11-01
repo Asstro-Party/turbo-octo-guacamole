@@ -36,8 +36,17 @@ func _ready():
 		window.godotConfig.userId = new URLSearchParams(window.location.search).get('userId') || '0';
 		window.godotConfig.username = new URLSearchParams(window.location.search).get('username') || 'Player';
 		window.godotConfig.playerModel = new URLSearchParams(window.location.search).get('playerModel') || '';
+		window.godotConfig.wsUrl = new URLSearchParams(window.location.search).get('wsUrl') || 'ws://localhost:3001';
 		"""
 		JavaScriptBridge.eval(js_code)
+
+		# Read wsUrl from JavaScript - use production URL if passed, otherwise default
+		var js_ws_url = JavaScriptBridge.eval("window.godotConfig.wsUrl")
+		if js_ws_url and js_ws_url != "":
+			ws_url = js_ws_url
+			print("[NetworkManager] Using WebSocket URL from params: ", ws_url)
+		else:
+			print("[NetworkManager] Using default WebSocket URL: ", ws_url)
 
 func connect_to_server(p_lobby_id: String, p_user_id: int, p_username: String):
 	lobby_id = p_lobby_id
