@@ -473,6 +473,8 @@ func sync_walls_from_server(walls_data: Array):
 		wall.is_horizontal = wall_data.isHorizontal
 		wall.health = wall_data.health
 		wall.id = wall_data.id  
+		if wall_data.isHorizontal:
+			wall.rotation_degrees = 90
 		players_container.add_child(wall)
 		moving_walls.append(wall)
 	
