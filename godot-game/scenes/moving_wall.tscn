@@ -4,16 +4,17 @@
 [ext_resource type="Texture2D" uid="uid://dbyajwefdwjcv" path="res://assets/obstacles/toilet_door.png" id="2"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_wall"]
-size = Vector2(40, 94)
+size = Vector2(40, 45)
 
 [node name="MovingWall" type="StaticBody2D"]
 collision_layer = 2
 script = ExtResource("1")
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
-scale = Vector2(0.2, 0.2)
+position = Vector2(0, -29.6)
+scale = Vector2(0.2, 0.10326798)
 texture = ExtResource("2")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
-position = Vector2(0, -3)
+position = Vector2(0, -27.5)
 shape = SubResource("RectangleShape2D_wall")
