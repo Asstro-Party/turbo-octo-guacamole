@@ -303,14 +303,14 @@ function initializeGameState(lobbyId) {
       // BOTTOM-LEFT CORNER (2x2 square)
       { id: 8, position: { x: 130, y: 550 }, health: 100, isHorizontal: false },
       { id: 9, position: { x: 230, y: 550 }, health: 100, isHorizontal: false },
-      { id: 10, position: { x: 130, y: 620 }, health: 100, isHorizontal: false },
-      { id: 11, position: { x: 230, y: 620 }, health: 100, isHorizontal: false },
+      { id: 10, position: { x: 130, y: 700 }, health: 100, isHorizontal: false },
+      { id: 11, position: { x: 230, y: 700 }, health: 100, isHorizontal: false },
       
       // BOTTOM-RIGHT CORNER (2x2 square)
       { id: 12, position: { x: 1110, y: 550 }, health: 100, isHorizontal: false },
       { id: 13, position: { x: 1210, y: 550 }, health: 100, isHorizontal: false },
-      { id: 14, position: { x: 1110, y: 620 }, health: 100, isHorizontal: false },
-      { id: 15, position: { x: 1210, y: 620 }, health: 100, isHorizontal: false },
+      { id: 14, position: { x: 1110, y: 700 }, health: 100, isHorizontal: false },
+      { id: 15, position: { x: 1210, y: 700 }, health: 100, isHorizontal: false },
       
       // CENTER (2x2 square)
       { id: 16, position: { x: 520, y: 280 }, health: 100, isHorizontal: false },
@@ -354,10 +354,10 @@ async function handleJoinGame(ws, message, wss) {
   if (!state.players[userId]) {
     // Define fixed spawn positions for 4 players
     const spawnPositions = [
-      { x: 200, y: 150 },   // Player 1: Top-Left
-      { x: 1080, y: 150 },  // Player 2: Top-Right
-      { x: 1080, y: 570 },  // Player 3: Bottom-Right
-      { x: 200, y: 570 }    // Player 4: Bottom-Left
+      { x: 180, y: 125 },   // Player 1: Top-Left
+      { x: 1160, y: 125 },  // Player 2: Top-Right
+      { x: 1160, y: 625 },  // Player 3: Bottom-Right
+      { x: 180, y: 625 }    // Player 4: Bottom-Left
     ];
     
     const spawnIndex = playerList.indexOf(userId); 
