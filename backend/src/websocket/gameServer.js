@@ -288,23 +288,65 @@ function initializeGameState(lobbyId) {
     players: {},
     bullets: [],
     walls: [
-      // Top corridor walls
-      { id: 0, position: { x: 320, y: 180 }, health: 100, isHorizontal: true },
-      { id: 1, position: { x: 960, y: 180 }, health: 100, isHorizontal: true },
+      // TOP LEFT L-SHAPE
+      { id: 0, position: { x: 430, y: 100 }, health: 100, isHorizontal: true },  // horizontal part
+      { id: 1, position: { x: 490, y: 100 }, health: 100, isHorizontal: true },
+      { id: 2, position: { x: 470, y: 160 }, health: 100, isHorizontal: false }, // vertical part
       
-      // Middle section - create a maze-like structure
-      { id: 2, position: { x: 200, y: 360 }, health: 100, isHorizontal: false },
-      { id: 3, position: { x: 480, y: 360 }, health: 100, isHorizontal: false },
-      { id: 4, position: { x: 800, y: 360 }, health: 100, isHorizontal: false },
-      { id: 5, position: { x: 1080, y: 360 }, health: 100, isHorizontal: false },
+      // TOP CENTER COLUMN
+      { id: 3, position: { x: 640, y: 100 }, health: 100, isHorizontal: false },
+      { id: 4, position: { x: 640, y: 160 }, health: 100, isHorizontal: false },
+      { id: 5, position: { x: 640, y: 220 }, health: 100, isHorizontal: false },
       
-      // Bottom corridor walls
-      { id: 6, position: { x: 320, y: 540 }, health: 100, isHorizontal: true },
-      { id: 7, position: { x: 960, y: 540 }, health: 100, isHorizontal: true },
+      // TOP RIGHT L-SHAPE
+      { id: 6, position: { x: 790, y: 100 }, health: 100, isHorizontal: true },
+      { id: 7, position: { x: 850, y: 100 }, health: 100, isHorizontal: true },
+      { id: 8, position: { x: 810, y: 160 }, health: 100, isHorizontal: false },
       
-      // Center obstacles
-      { id: 8, position: { x: 640, y: 240 }, health: 100, isHorizontal: true },
-      { id: 9, position: { x: 640, y: 480 }, health: 100, isHorizontal: true }
+      // LEFT MIDDLE ROW
+      { id: 9, position: { x: 430, y: 290 }, health: 100, isHorizontal: true },
+      { id: 10, position: { x: 490, y: 290 }, health: 100, isHorizontal: true },
+      { id: 11, position: { x: 550, y: 290 }, health: 100, isHorizontal: true },
+      
+      // CENTER LARGE SQUARE
+      // Top row
+      { id: 12, position: { x: 550, y: 310 }, health: 100, isHorizontal: true },
+      { id: 13, position: { x: 610, y: 310 }, health: 100, isHorizontal: true },
+      { id: 14, position: { x: 670, y: 310 }, health: 100, isHorizontal: true },
+      { id: 15, position: { x: 730, y: 310 }, health: 100, isHorizontal: true },
+      // Left side
+      { id: 16, position: { x: 560, y: 360 }, health: 100, isHorizontal: false },
+      { id: 17, position: { x: 560, y: 420 }, health: 100, isHorizontal: false },
+      // Right side
+      { id: 18, position: { x: 720, y: 360 }, health: 100, isHorizontal: false },
+      { id: 19, position: { x: 720, y: 420 }, health: 100, isHorizontal: false },
+      // Bottom row
+      { id: 20, position: { x: 550, y: 460 }, health: 100, isHorizontal: true },
+      { id: 21, position: { x: 610, y: 460 }, health: 100, isHorizontal: true },
+      { id: 22, position: { x: 670, y: 460 }, health: 100, isHorizontal: true },
+      { id: 23, position: { x: 730, y: 460 }, health: 100, isHorizontal: true },
+      
+      // RIGHT MIDDLE ROW
+      { id: 24, position: { x: 730, y: 430 }, health: 100, isHorizontal: true },
+      { id: 25, position: { x: 790, y: 430 }, health: 100, isHorizontal: true },
+      { id: 26, position: { x: 850, y: 430 }, health: 100, isHorizontal: true },
+      
+      // BOTTOM LEFT L-SHAPE
+      { id: 27, position: { x: 430, y: 460 }, health: 100, isHorizontal: true },
+      { id: 28, position: { x: 490, y: 460 }, health: 100, isHorizontal: true },
+      { id: 29, position: { x: 470, y: 520 }, health: 100, isHorizontal: false },
+      { id: 30, position: { x: 470, y: 580 }, health: 100, isHorizontal: false },
+      
+      // BOTTOM CENTER COLUMN
+      { id: 31, position: { x: 640, y: 500 }, health: 100, isHorizontal: false },
+      { id: 32, position: { x: 640, y: 560 }, health: 100, isHorizontal: false },
+      { id: 33, position: { x: 640, y: 620 }, health: 100, isHorizontal: false },
+      
+      // BOTTOM RIGHT L-SHAPE
+      { id: 34, position: { x: 790, y: 620 }, health: 100, isHorizontal: true },
+      { id: 35, position: { x: 850, y: 620 }, health: 100, isHorizontal: true },
+      { id: 36, position: { x: 810, y: 520 }, health: 100, isHorizontal: false },
+      { id: 37, position: { x: 810, y: 580 }, health: 100, isHorizontal: false },
     ],
     portals: [],
     lastPortalSpawn: Date.now()
@@ -718,10 +760,10 @@ setInterval(() => {
               
               // Use fixed spawn positions
               const spawnPositions = [
-                { x: 200, y: 150 },   // Top-Left
-                { x: 1080, y: 150 },  // Top-Right
-                { x: 1080, y: 570 },  // Bottom-Right
-                { x: 200, y: 570 }    // Bottom-Left
+                { x: 200, y: 100 },   // Top-Left
+                { x: 1000, y: 100 },  // Top-Right
+                { x: 1000, y: 620 },  // Bottom-Right
+                { x: 200, y: 620 }    // Bottom-Left
               ];
               const playerIds = Object.keys(state.players);
               const playerIndex = playerIds.indexOf(String(pid));
@@ -750,21 +792,35 @@ setInterval(() => {
     if (!state.lastPortalSpawn) state.lastPortalSpawn = now;
 
     if (state.portals.length === 0 && now - state.lastPortalSpawn > PORTAL_SPAWN_INTERVAL) {
-      // Spawn portal pair
+      // Define fixed portal spawn locations that match the maze layout
+      const portalSpawnLocations = [
+        // Top left opening
+        { x: 150, y: 100 },
+        // Top right opening  
+        { x: 1130, y: 100 },
+        // Left middle opening
+        { x: 100, y: 360 },
+        // Right middle opening
+        { x: 1180, y: 360 },
+        // Bottom left opening
+        { x: 150, y: 620 },
+        // Bottom right opening
+        { x: 1130, y: 620 },
+        // Center gaps
+        { x: 640, y: 100 },
+        { x: 640, y: 620 }
+      ];
+      
+      // Randomly select 2 different locations for the portal pair
+      const shuffled = [...portalSpawnLocations].sort(() => Math.random() - 0.5);
       const portal1 = {
         id: 0,
-        position: {
-          x: Math.random() * (GAME_WIDTH - 300) + 150,
-          y: Math.random() * (GAME_HEIGHT - 300) + 150
-        }
+        position: shuffled[0]
       };
       
       const portal2 = {
         id: 1,
-        position: {
-          x: Math.random() * (GAME_WIDTH - 300) + 150,
-          y: Math.random() * (GAME_HEIGHT - 300) + 150
-        }
+        position: shuffled[1]
       };
       
       state.portals = [portal1, portal2];
