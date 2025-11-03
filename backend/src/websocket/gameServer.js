@@ -295,16 +295,16 @@ function initializeGameState(lobbyId) {
       { id: 3, position: { x: 220, y: 125 }, health: 100, isHorizontal: false },
       
       // TOP-RIGHT CORNER (2x2 square)
-      { id: 4, position: { x: 1160, y: 150 }, health: 100, isHorizontal: false },
-      { id: 5, position: { x: 1140, y: 125 }, health: 100, isHorizontal: false },
-      { id: 6, position: { x: 1160, y: 100 }, health: 100, isHorizontal: false },
-      { id: 7, position: { x: 1180, y: 125 }, health: 100, isHorizontal: false },
+      { id: 4, position: { x: 1160, y: 200 }, health: 100, isHorizontal: false },
+      { id: 5, position: { x: 1120, y: 125 }, health: 100, isHorizontal: false },
+      { id: 6, position: { x: 1160, y: 40 }, health: 100, isHorizontal: false },
+      { id: 7, position: { x: 1200, y: 125 }, health: 100, isHorizontal: false },
       
       // BOTTOM-LEFT CORNER (2x2 square)
       { id: 8, position: { x: 180, y: 650 }, health: 100, isHorizontal: false },
-      { id: 9, position: { x: 160, y: 625 }, health: 100, isHorizontal: false },
+      { id: 9, position: { x: 140, y: 625 }, health: 100, isHorizontal: false },
       { id: 10, position: { x: 180, y: 600 }, health: 100, isHorizontal: false },
-      { id: 11, position: { x: 160, y: 625 }, health: 100, isHorizontal: false },
+      { id: 11, position: { x: 220, y: 625 }, health: 100, isHorizontal: false },
       
       // BOTTOM-RIGHT CORNER (2x2 square)
       { id: 12, position: { x: 1160, y: 550 }, health: 100, isHorizontal: false },
