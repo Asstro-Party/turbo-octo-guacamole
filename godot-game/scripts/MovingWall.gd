@@ -11,7 +11,6 @@ var is_horizontal = true  # true for horizontal, false for vertical
 
 func _ready():
 	start_position = position
-	is_horizontal = randf() > 0.5  # Randomly choose direction
 
 #func _physics_process(delta):
 #	if is_horizontal:
