@@ -289,8 +289,8 @@ function initializeGameState(lobbyId) {
     bullets: [],
     walls: [
       // TOP-LEFT CORNER (2x2 square)
-      { id: 0, position: { x: 130, y: 80 }, health: 100, isHorizontal: True },
-      { id: 1, position: { x: 230, y: 80 }, health: 100, isHorizontal: True },
+      { id: 0, position: { x: 130, y: 80 }, health: 100, isHorizontal: false },
+      { id: 1, position: { x: 230, y: 80 }, health: 100, isHorizontal: false },
       { id: 2, position: { x: 130, y: 200 }, health: 100, isHorizontal: false },
       { id: 3, position: { x: 170, y: 200 }, health: 100, isHorizontal: false },
       
