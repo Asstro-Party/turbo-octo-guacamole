@@ -289,28 +289,28 @@ function initializeGameState(lobbyId) {
     bullets: [],
     walls: [
       // TOP-LEFT CORNER (2x2 square)
-      { id: 0, position: { x: 130, y: 50 }, health: 100, isHorizontal: true },
-      { id: 1, position: { x: 230, y: 50 }, health: 100, isHorizontal: false },
-      { id: 2, position: { x: 130, y: 200 }, health: 100, isHorizontal: false },
-      { id: 3, position: { x: 230, y: 200 }, health: 100, isHorizontal: false },
+      { id: 0, position: { x: 180, y: 150 }, health: 100, isHorizontal: true },
+      { id: 1, position: { x: 160, y: 125 }, health: 100, isHorizontal: false },
+      { id: 2, position: { x: 180, y: 100 }, health: 100, isHorizontal: false },
+      { id: 3, position: { x: 200, y: 125 }, health: 100, isHorizontal: false },
       
       // TOP-RIGHT CORNER (2x2 square)
-      { id: 4, position: { x: 1110, y: 50 }, health: 100, isHorizontal: false },
-      { id: 5, position: { x: 1210, y: 50 }, health: 100, isHorizontal: false },
-      { id: 6, position: { x: 1110, y: 200 }, health: 100, isHorizontal: false },
-      { id: 7, position: { x: 1210, y: 200 }, health: 100, isHorizontal: false },
+      { id: 4, position: { x: 1160, y: 150 }, health: 100, isHorizontal: false },
+      { id: 5, position: { x: 1140, y: 125 }, health: 100, isHorizontal: false },
+      { id: 6, position: { x: 1160, y: 100 }, health: 100, isHorizontal: false },
+      { id: 7, position: { x: 1180, y: 125 }, health: 100, isHorizontal: false },
       
       // BOTTOM-LEFT CORNER (2x2 square)
-      { id: 8, position: { x: 130, y: 550 }, health: 100, isHorizontal: false },
-      { id: 9, position: { x: 230, y: 550 }, health: 100, isHorizontal: false },
-      { id: 10, position: { x: 130, y: 700 }, health: 100, isHorizontal: false },
-      { id: 11, position: { x: 230, y: 700 }, health: 100, isHorizontal: false },
+      { id: 8, position: { x: 180, y: 650 }, health: 100, isHorizontal: false },
+      { id: 9, position: { x: 160, y: 625 }, health: 100, isHorizontal: false },
+      { id: 10, position: { x: 180, y: 600 }, health: 100, isHorizontal: false },
+      { id: 11, position: { x: 160, y: 625 }, health: 100, isHorizontal: false },
       
       // BOTTOM-RIGHT CORNER (2x2 square)
-      { id: 12, position: { x: 1110, y: 550 }, health: 100, isHorizontal: false },
-      { id: 13, position: { x: 1210, y: 550 }, health: 100, isHorizontal: false },
-      { id: 14, position: { x: 1110, y: 700 }, health: 100, isHorizontal: false },
-      { id: 15, position: { x: 1210, y: 700 }, health: 100, isHorizontal: false },
+      { id: 12, position: { x: 1160, y: 650 }, health: 100, isHorizontal: false },
+      { id: 13, position: { x: 1140, y: 625 }, health: 100, isHorizontal: false },
+      { id: 14, position: { x: 1160, y: 600 }, health: 100, isHorizontal: false },
+      { id: 15, position: { x: 1140, y: 625 }, health: 100, isHorizontal: false },
       
       // CENTER (2x2 square)
       { id: 16, position: { x: 520, y: 280 }, health: 100, isHorizontal: false },
