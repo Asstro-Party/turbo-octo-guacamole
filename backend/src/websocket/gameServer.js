@@ -288,65 +288,35 @@ function initializeGameState(lobbyId) {
     players: {},
     bullets: [],
     walls: [
-      // TOP LEFT L-SHAPE
-      { id: 0, position: { x: 430, y: 100 }, health: 100, isHorizontal: true },  // horizontal part
-      { id: 1, position: { x: 490, y: 100 }, health: 100, isHorizontal: true },
-      { id: 2, position: { x: 470, y: 160 }, health: 100, isHorizontal: false }, // vertical part
+      // TOP-LEFT CORNER (2x2 square)
+      { id: 0, position: { x: 130, y: 100 }, health: 100, isHorizontal: false },
+      { id: 1, position: { x: 170, y: 100 }, health: 100, isHorizontal: false },
+      { id: 2, position: { x: 130, y: 200 }, health: 100, isHorizontal: false },
+      { id: 3, position: { x: 170, y: 200 }, health: 100, isHorizontal: false },
       
-      // TOP CENTER COLUMN
-      { id: 3, position: { x: 640, y: 100 }, health: 100, isHorizontal: false },
-      { id: 4, position: { x: 640, y: 160 }, health: 100, isHorizontal: false },
-      { id: 5, position: { x: 640, y: 220 }, health: 100, isHorizontal: false },
+      // TOP-RIGHT CORNER (2x2 square)
+      { id: 4, position: { x: 1110, y: 100 }, health: 100, isHorizontal: false },
+      { id: 5, position: { x: 1150, y: 100 }, health: 100, isHorizontal: false },
+      { id: 6, position: { x: 1110, y: 200 }, health: 100, isHorizontal: false },
+      { id: 7, position: { x: 1150, y: 200 }, health: 100, isHorizontal: false },
       
-      // TOP RIGHT L-SHAPE
-      { id: 6, position: { x: 790, y: 100 }, health: 100, isHorizontal: true },
-      { id: 7, position: { x: 850, y: 100 }, health: 100, isHorizontal: true },
-      { id: 8, position: { x: 810, y: 160 }, health: 100, isHorizontal: false },
+      // BOTTOM-LEFT CORNER (2x2 square)
+      { id: 8, position: { x: 130, y: 520 }, health: 100, isHorizontal: false },
+      { id: 9, position: { x: 170, y: 520 }, health: 100, isHorizontal: false },
+      { id: 10, position: { x: 130, y: 620 }, health: 100, isHorizontal: false },
+      { id: 11, position: { x: 170, y: 620 }, health: 100, isHorizontal: false },
       
-      // LEFT MIDDLE ROW
-      { id: 9, position: { x: 430, y: 290 }, health: 100, isHorizontal: true },
-      { id: 10, position: { x: 490, y: 290 }, health: 100, isHorizontal: true },
-      { id: 11, position: { x: 550, y: 290 }, health: 100, isHorizontal: true },
+      // BOTTOM-RIGHT CORNER (2x2 square)
+      { id: 12, position: { x: 1110, y: 520 }, health: 100, isHorizontal: false },
+      { id: 13, position: { x: 1150, y: 520 }, health: 100, isHorizontal: false },
+      { id: 14, position: { x: 1110, y: 620 }, health: 100, isHorizontal: false },
+      { id: 15, position: { x: 1150, y: 620 }, health: 100, isHorizontal: false },
       
-      // CENTER LARGE SQUARE
-      // Top row
-      { id: 12, position: { x: 550, y: 310 }, health: 100, isHorizontal: true },
-      { id: 13, position: { x: 610, y: 310 }, health: 100, isHorizontal: true },
-      { id: 14, position: { x: 670, y: 310 }, health: 100, isHorizontal: true },
-      { id: 15, position: { x: 730, y: 310 }, health: 100, isHorizontal: true },
-      // Left side
-      { id: 16, position: { x: 560, y: 360 }, health: 100, isHorizontal: false },
-      { id: 17, position: { x: 560, y: 420 }, health: 100, isHorizontal: false },
-      // Right side
-      { id: 18, position: { x: 720, y: 360 }, health: 100, isHorizontal: false },
-      { id: 19, position: { x: 720, y: 420 }, health: 100, isHorizontal: false },
-      // Bottom row
-      { id: 20, position: { x: 550, y: 460 }, health: 100, isHorizontal: true },
-      { id: 21, position: { x: 610, y: 460 }, health: 100, isHorizontal: true },
-      { id: 22, position: { x: 670, y: 460 }, health: 100, isHorizontal: true },
-      { id: 23, position: { x: 730, y: 460 }, health: 100, isHorizontal: true },
-      
-      // RIGHT MIDDLE ROW
-      { id: 24, position: { x: 730, y: 430 }, health: 100, isHorizontal: true },
-      { id: 25, position: { x: 790, y: 430 }, health: 100, isHorizontal: true },
-      { id: 26, position: { x: 850, y: 430 }, health: 100, isHorizontal: true },
-      
-      // BOTTOM LEFT L-SHAPE
-      { id: 27, position: { x: 430, y: 460 }, health: 100, isHorizontal: true },
-      { id: 28, position: { x: 490, y: 460 }, health: 100, isHorizontal: true },
-      { id: 29, position: { x: 470, y: 520 }, health: 100, isHorizontal: false },
-      { id: 30, position: { x: 470, y: 580 }, health: 100, isHorizontal: false },
-      
-      // BOTTOM CENTER COLUMN
-      { id: 31, position: { x: 640, y: 500 }, health: 100, isHorizontal: false },
-      { id: 32, position: { x: 640, y: 560 }, health: 100, isHorizontal: false },
-      { id: 33, position: { x: 640, y: 620 }, health: 100, isHorizontal: false },
-      
-      // BOTTOM RIGHT L-SHAPE
-      { id: 34, position: { x: 790, y: 620 }, health: 100, isHorizontal: true },
-      { id: 35, position: { x: 850, y: 620 }, health: 100, isHorizontal: true },
-      { id: 36, position: { x: 810, y: 520 }, health: 100, isHorizontal: false },
-      { id: 37, position: { x: 810, y: 580 }, health: 100, isHorizontal: false },
+      // CENTER (2x2 square)
+      { id: 16, position: { x: 620, y: 310 }, health: 100, isHorizontal: false },
+      { id: 17, position: { x: 660, y: 310 }, health: 100, isHorizontal: false },
+      { id: 18, position: { x: 620, y: 410 }, health: 100, isHorizontal: false },
+      { id: 19, position: { x: 660, y: 410 }, health: 100, isHorizontal: false },
     ],
     portals: [],
     lastPortalSpawn: Date.now()
