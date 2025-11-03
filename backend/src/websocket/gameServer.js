@@ -291,12 +291,10 @@ function initializeGameState(lobbyId) {
       // TOP-LEFT CORNER (2x2 square)
       { id: 0, position: { x: 50, y: 40 }, health: 100, isHorizontal: true },
       { id: 1, position: { x: 150, y: 40 }, health: 100, isHorizontal: true },
-      { id: 2, position: { x: 130, y: 90 }, health: 100, isHorizontal: false },
-      { id: 3, position: { x: 130, y: 190 }, health: 100, isHorizontal: false },
-      
-      // TOP-RIGHT CORNER (2x2 square)
-      { id: 4, position: { x: 1160, y: 200 }, health: 100, isHorizontal: false },
-      { id: 5, position: { x: 1120, y: 125 }, health: 100, isHorizontal: false },
+      { id: 2, position: { x: 180, y: 80 }, health: 100, isHorizontal: false },
+      { id: 3, position: { x: 180, y: 180 }, health: 100, isHorizontal: false },
+      { id: 4, position: { x: 50, y: 240 }, health: 100, isHorizontal: false },
+      { id: 5, position: { x: 150, y: 240 }, health: 100, isHorizontal: false },
       { id: 6, position: { x: 1160, y: 40 }, health: 100, isHorizontal: false },
       { id: 7, position: { x: 1200, y: 125 }, health: 100, isHorizontal: false },
       
