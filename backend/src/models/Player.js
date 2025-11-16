@@ -98,13 +98,13 @@ export class Player {
   /**
    * Respawn player at their designated spawn position
    * @param {Array} spawnPositions - Array of spawn positions
+   * Note: Death counting is handled separately in gameServer.js:handleKill()
    */
   respawn(spawnPositions) {
     this.health = 100;
     const spawnPos = spawnPositions[this.spawnIndex % spawnPositions.length];
     this.position.x = spawnPos.x;
     this.position.y = spawnPos.y;
-    this.deaths++;
   }
 
   /**

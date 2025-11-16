@@ -398,6 +398,11 @@ async function handleKill(message, lobbyId) {
       return;
     }
 
+    // NOTE: In-memory kill/death counters are updated by server-side collision detection
+    // in Game.js:handleBulletPlayerCollisions(). This function only updates the database
+    // for persistence. Client-reported kills are validated but not used for game state.
+
+    // Update database for persistence
     dbQueue.push(() => pool.query(
       'UPDATE game_participants SET kills = kills + 1 WHERE session_id = $1 AND user_id = $2',
       [sessionId, killerId]
@@ -408,13 +413,7 @@ async function handleKill(message, lobbyId) {
     ));
     processDbQueue();
 
-    // Broadcast kill event
-    lobby.broadcast({
-      type: 'kill',
-      killerId,
-      victimId,
-      timestamp: Date.now()
-    });
+    console.log(`[gameServer] Validated kill: ${killerId} -> ${victimId}, updated database`);
 
   } catch (error) {
     console.error('Kill tracking error:', error);

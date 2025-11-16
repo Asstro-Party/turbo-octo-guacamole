@@ -320,9 +320,12 @@ export class Game {
           // Handle player death
           if (died) {
             const shooter = this.players.get(bullet.shooterId);
+
+            // Update kill/death counters (server-authoritative)
             if (shooter) {
               shooter.addKill();
             }
+            player.deaths++;
 
             // Broadcast kill event
             broadcastCallback({
@@ -332,13 +335,13 @@ export class Game {
               timestamp: now
             });
 
+            // Respawn the victim
+            player.respawn(Player.getSpawnPositions());
+
             // Check for win condition
             if (shooter && shooter.kills >= this.KILLS_TO_WIN) {
               // Game over - someone won!
               return { gameOver: true, winnerId: bullet.shooterId };
-            } else {
-              // Respawn player
-              player.respawn(Player.getSpawnPositions());
             }
           }
 
