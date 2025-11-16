@@ -96,15 +96,15 @@ export class Player {
   }
 
   /**
-   * Respawn player at their designated spawn position
-   * @param {Array} spawnPositions - Array of spawn positions
+   * Respawn player at a given position
+   * @param {Object} position - Position to respawn at {x, y}
    * Note: Death counting is handled separately in gameServer.js:handleKill()
    */
-  respawn(spawnPositions) {
+  respawn(position) {
     this.health = 100;
-    const spawnPos = spawnPositions[this.spawnIndex % spawnPositions.length];
-    this.position.x = spawnPos.x;
-    this.position.y = spawnPos.y;
+    this.position.x = position.x;
+    this.position.y = position.y;
+    console.log(`Player ${this.userId} respawned at (${Math.round(position.x)}, ${Math.round(position.y)})`);
   }
 
   /**

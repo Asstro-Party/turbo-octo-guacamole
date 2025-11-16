@@ -335,8 +335,9 @@ export class Game {
               timestamp: now
             });
 
-            // Respawn the victim
-            player.respawn(Player.getSpawnPositions());
+            // Respawn the victim at a random safe position
+            const randomPos = this.findRandomSafePosition(userId);
+            player.respawn(randomPos);
 
             // Check for win condition
             if (shooter && shooter.kills >= this.KILLS_TO_WIN) {
@@ -420,6 +421,68 @@ export class Game {
     if (player) {
       player.teleport(position.x, position.y);
     }
+  }
+
+  /**
+   * Find a random safe position for respawning
+   * @param {number} excludeUserId - User ID to exclude from collision check
+   * @returns {Object} Safe position {x, y}
+   */
+  findRandomSafePosition(excludeUserId) {
+    const SAFE_MARGIN = 50; // Minimum distance from edges
+    const MAX_ATTEMPTS = 100;
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      // Generate random position within game bounds with margin
+      const x = SAFE_MARGIN + Math.random() * (this.GAME_WIDTH - 2 * SAFE_MARGIN);
+      const y = SAFE_MARGIN + Math.random() * (this.GAME_HEIGHT - 2 * SAFE_MARGIN);
+
+      // Check collision with walls
+      let collidesWithWall = false;
+      for (const wall of this.walls) {
+        if (!wall || wall.health <= 0) continue;
+
+        const collision = this.checkCircleRectCollision(
+          { x, y, radius: this.PLAYER_RADIUS },
+          { x: wall.position.x, y: wall.position.y, width: this.WALL_WIDTH, height: this.WALL_HEIGHT }
+        );
+
+        if (collision) {
+          collidesWithWall = true;
+          break;
+        }
+      }
+
+      if (collidesWithWall) continue;
+
+      // Check collision with other players
+      let collidesWithPlayer = false;
+      const MIN_PLAYER_DISTANCE = this.PLAYER_RADIUS * 3; // 3x player radius for safe distance
+
+      for (const [userId, player] of this.players) {
+        if (userId === excludeUserId) continue; // Don't check against self
+        if (!player || !player.position) continue;
+
+        const dx = x - player.position.x;
+        const dy = y - player.position.y;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < MIN_PLAYER_DISTANCE * MIN_PLAYER_DISTANCE) {
+          collidesWithPlayer = true;
+          break;
+        }
+      }
+
+      if (collidesWithPlayer) continue;
+
+      // Found a safe position!
+      console.log(`[Game ${this.gameId}] Found safe respawn position at (${Math.round(x)}, ${Math.round(y)}) after ${attempt + 1} attempts`);
+      return { x, y };
+    }
+
+    // Fallback to center if no safe position found (very rare)
+    console.warn(`[Game ${this.gameId}] Could not find safe position after ${MAX_ATTEMPTS} attempts, using center`);
+    return { x: this.GAME_WIDTH / 2, y: this.GAME_HEIGHT / 2 };
   }
 
   /**
