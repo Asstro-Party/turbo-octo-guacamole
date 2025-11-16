@@ -1,4 +1,8 @@
-// Authoritative server-side game state
+// Authoritative server-side game state using Lobby, Game, and Player objects
+import { Lobby } from '../models/Lobby.js';
+import { getLobby, updateLobby } from '../config/redis.js';
+import pool from '../config/database.js';
+
 // Simple async job queue for DB writes
 const dbQueue = [];
 let processingDb = false;
@@ -11,39 +15,25 @@ async function processDbQueue() {
   }
   processingDb = false;
 }
-const gameStates = new Map(); // lobbyId -> { players: { [userId]: { ... } }, bullets: [ { id, position, velocity, rotation, shooterId, ... } ] }
-const playerInputs = new Map(); // lobbyId -> { [userId]: latestInput }
 
-// Game loop interval (ms)
-const TICK_RATE = 50; // ~20 times per second (20 FPS)
-import { getLobby, updateLobby } from '../config/redis.js';
-import pool from '../config/database.js';
-
-// Store active WebSocket connections
-const connections = new Map(); // lobbyId -> Set of ws connections
-const userSockets = new Map(); // userId -> Set of ws connections (user can have multiple: game + voice)
+// Store lobbies
+const lobbies = new Map(); // lobbyId -> Lobby instance
 
 // Store all WebSocket connections (for lobby browser updates)
 const allClients = new Set();
 
-// ==========================
-// WebRTC voice signalling state
-// ==========================
-export const voiceRooms = new Map(); // roomId (use lobbyId) -> Set<userId>
-const voicePresence = new Map(); // userId -> { roomId, joinedAt }
+// Game loop interval (ms)
+const TICK_RATE = 50; // ~20 times per second (20 FPS)
 
 // Connection timeout management
 const VOICE_TIMEOUT_MS = 300000; // 5 minutes of inactivity
 const cleanupInterval = setInterval(() => {
-  const now = Date.now();
-  for (const [userId, presence] of voicePresence.entries()) {
-    if (now - presence.joinedAt > VOICE_TIMEOUT_MS) {
-      console.log(`[WebRTC] Cleaning up stale voice connection for user ${userId}`);
-      handleLeaveVoice(presence.roomId, userId);
-    }
+  for (const lobby of lobbies.values()) {
+    lobby.cleanupStaleVoice(VOICE_TIMEOUT_MS);
   }
 }, 60000); // Check every minute
 
+// ICE servers for WebRTC
 const ICE_SERVERS = (() => {
   try {
     return process.env.WEBRTC_ICE_SERVERS ? JSON.parse(process.env.WEBRTC_ICE_SERVERS) : [
@@ -55,58 +45,24 @@ const ICE_SERVERS = (() => {
   }
 })();
 
-function sendToUser(userId, payload) {
-  console.log(`[WebRTC] sendToUser called for userId: ${userId} (type: ${typeof userId})`);
-
-  let sockets = userSockets.get(userId);
-  if (!sockets) {
-    // Try type coercion
-    sockets = userSockets.get(Number(userId)) || userSockets.get(String(userId));
+/**
+ * Get or create a lobby
+ * @param {string} lobbyId - Lobby ID
+ * @returns {Lobby} Lobby instance
+ */
+function getOrCreateLobby(lobbyId) {
+  if (!lobbies.has(lobbyId)) {
+    lobbies.set(lobbyId, new Lobby(lobbyId));
   }
-
-  if (!sockets || sockets.size === 0) {
-    console.log(`[WebRTC] WARNING: No sockets found for user ${userId}`);
-    console.log(`[WebRTC] userSockets keys:`, Array.from(userSockets.keys()));
-    return;
-  }
-
-  console.log(`[WebRTC] Found ${sockets.size} socket(s) for user ${userId}`);
-  let sentCount = 0;
-
-  sockets.forEach(sock => {
-    if (sock.readyState !== 1) {
-      console.log(`[WebRTC] Skipping socket for user ${userId} - not ready (state: ${sock.readyState})`);
-      return;
-    }
-
-    try {
-      sock.send(JSON.stringify(payload));
-      sentCount++;
-    } catch (e) {
-      console.error(`[WebRTC] ERROR: Failed to send to user ${userId}:`, e.message);
-    }
-  });
-
-  console.log(`[WebRTC] Sent ${payload.type} to ${sentCount} socket(s) for user ${userId}`);
+  return lobbies.get(lobbyId);
 }
 
-function broadcastVoice(roomId, payload, excludeUserId = null) {
-  const members = voiceRooms.get(roomId);
-  if (!members) return;
-  for (const uid of members) {
-    if (excludeUserId && uid === excludeUserId) continue;
-    sendToUser(uid, payload);
-  }
-}
-
-function ensureVoiceRoom(roomId) {
-  if (!voiceRooms.has(roomId)) {
-    console.log(`[WebRTC] Creating new voice room: ${roomId}`);
-    voiceRooms.set(roomId, new Set());
-  }
-  return voiceRooms.get(roomId);
-}
-
+/**
+ * Build peer init hint for WebRTC
+ * @param {number} selfId - Self user ID
+ * @param {number} otherId - Other user ID
+ * @returns {boolean} True if self should initiate
+ */
 function buildPeerInitHint(selfId, otherId) {
   try {
     const aNum = Number(selfId);
@@ -118,6 +74,10 @@ function buildPeerInitHint(selfId, otherId) {
   }
 }
 
+/**
+ * Setup WebSocket server
+ * @param {WebSocketServer} wss - WebSocket server instance
+ */
 export function setupWebSocketServer(wss) {
   wss.on('connection', (ws) => {
     allClients.add(ws);
@@ -140,20 +100,9 @@ export function setupWebSocketServer(wss) {
           case 'player_input':
             handlePlayerInput(ws, message, currentLobbyId);
             break;
-          case 'player_input':
-            handlePlayerInput(ws, message, currentLobbyId);
-            break;
 
           case 'player_teleported':
-            // Handle player teleportation from portal
-            if (currentLobbyId && message.userId) {
-              const state = gameStates.get(currentLobbyId);
-              if (state && state.players && state.players[message.userId]) {
-                state.players[message.userId].position.x = message.position.x;
-                state.players[message.userId].position.y = message.position.y;
-                console.log(`[${currentLobbyId}] Player ${message.userId} teleported to (${message.position.x}, ${message.position.y})`);
-              }
-            }
+            handlePlayerTeleported(message, currentLobbyId);
             break;
 
           case 'kill':
@@ -171,9 +120,11 @@ export function setupWebSocketServer(wss) {
           case 'host_return_to_waiting':
             await handleHostReturnToWaiting(message.lobbyId, currentUserId);
             break;
+
           case "play_sound":
             handlePlaySound(ws, message);
             break;
+
           // =============== VOICE: simple-peer signalling ==================
           case 'joined_voice': {
             const { roomId, userId } = message;
@@ -212,18 +163,20 @@ export function setupWebSocketServer(wss) {
             const { roomId, userId } = message;
             console.log(`[WebRTC] User ${userId} requesting peers for room ${roomId}`);
 
-            const room = voiceRooms.get(roomId);
-            const peers = room ? Array.from(room).filter(id => id !== userId) : [];
+            const lobby = lobbies.get(roomId);
+            const peers = lobby ? lobby.getVoiceMembers(userId) : [];
 
             console.log(`[WebRTC] Room ${roomId} peers for ${userId}:`, peers);
             console.log(`[WebRTC] ICE servers:`, ICE_SERVERS);
 
-            sendToUser(userId, {
-              type: 'voice_peer_list',
-              roomId,
-              peers: peers.map(pid => ({ userId: pid, initiatorHint: buildPeerInitHint(userId, pid) })),
-              iceServers: ICE_SERVERS,
-            });
+            if (lobby) {
+              lobby.sendToUser(userId, {
+                type: 'voice_peer_list',
+                roomId,
+                peers: peers.map(pid => ({ userId: pid, initiatorHint: buildPeerInitHint(userId, pid) })),
+                iceServers: ICE_SERVERS,
+              });
+            }
             break;
           }
 
@@ -241,35 +194,24 @@ export function setupWebSocketServer(wss) {
       console.log('WebSocket connection closed for user:', currentUserId);
 
       // Voice cleanup if the user was in a voice room
-      if (currentUserId) {
-        const p = voicePresence.get(currentUserId);
-        if (p?.roomId) {
-          console.log(`[WebRTC] Cleaning up voice for disconnected user ${currentUserId} in room ${p.roomId}`);
-          await handleLeaveVoice(p.roomId, currentUserId);
+      if (currentUserId && currentLobbyId) {
+        const lobby = lobbies.get(currentLobbyId);
+        if (lobby && lobby.isInVoice(currentUserId)) {
+          console.log(`[WebRTC] Cleaning up voice for disconnected user ${currentUserId} in lobby ${currentLobbyId}`);
+          await handleLeaveVoice(currentLobbyId, currentUserId);
         }
       }
 
-      if (currentLobbyId && connections.has(currentLobbyId)) {
-        connections.get(currentLobbyId).delete(ws);
-        if (connections.get(currentLobbyId).size === 0) {
-          connections.delete(currentLobbyId);
-        }
-      }
-      if (currentUserId) {
-        // Remove socket from user's set
-        const userSocketSet = userSockets.get(currentUserId);
-        if (userSocketSet) {
-          userSocketSet.delete(ws);
-          if (userSocketSet.size === 0) {
-            userSockets.delete(currentUserId);
-          }
-        }
+      // Remove connection from lobby
+      if (currentLobbyId) {
+        const lobby = lobbies.get(currentLobbyId);
+        if (lobby) {
+          lobby.removeConnection(ws, currentUserId);
 
-        // Remove player from server game state
-        if (currentLobbyId && gameStates.has(currentLobbyId)) {
-          const state = gameStates.get(currentLobbyId);
-          if (state.players && state.players[currentUserId]) {
-            delete state.players[currentUserId];
+          // Clean up empty lobby
+          if (lobby.isEmpty()) {
+            lobbies.delete(currentLobbyId);
+            console.log(`[Lobby ${currentLobbyId}] Deleted (empty)`);
           }
         }
       }
@@ -281,97 +223,34 @@ export function setupWebSocketServer(wss) {
   });
 }
 
-function initializeGameState(lobbyId) {
-  if (gameStates.has(lobbyId)) return gameStates.get(lobbyId);
-  
-  const state = {
-    players: {},
-    bullets: [],
-    walls: [
-      // TOP-LEFT CORNER (2x2 square)
-      { id: 0, position: { x: 50, y: 40 }, health: 100, isHorizontal: true },
-      { id: 1, position: { x: 150, y: 40 }, health: 100, isHorizontal: true },
-      { id: 2, position: { x: 220, y: 80 }, health: 100, isHorizontal: false },
-      { id: 3, position: { x: 220, y: 180 }, health: 100, isHorizontal: false },
-      { id: 4, position: { x: 50, y: 240 }, health: 100, isHorizontal: true },
-      { id: 5, position: { x: 150, y: 240 }, health: 100, isHorizontal: true },
-      { id: 6, position: { x: 1160, y: 40 }, health: 100, isHorizontal: false },
-      { id: 7, position: { x: 1200, y: 125 }, health: 100, isHorizontal: false },
-      
-      // BOTTOM-LEFT CORNER (2x2 square)
-      { id: 8, position: { x: 180, y: 650 }, health: 100, isHorizontal: false },
-      { id: 9, position: { x: 140, y: 625 }, health: 100, isHorizontal: false },
-      { id: 10, position: { x: 180, y: 600 }, health: 100, isHorizontal: false },
-      { id: 11, position: { x: 220, y: 625 }, health: 100, isHorizontal: false },
-      
-      // BOTTOM-RIGHT CORNER (2x2 square)
-      { id: 12, position: { x: 1160, y: 550 }, health: 100, isHorizontal: false },
-      { id: 13, position: { x: 1140, y: 550 }, health: 100, isHorizontal: false },
-      { id: 14, position: { x: 1160, y: 700 }, health: 100, isHorizontal: false },
-      { id: 15, position: { x: 1140, y: 700 }, health: 100, isHorizontal: false },
-      
-      // CENTER (2x2 square)
-      { id: 16, position: { x: 520, y: 280 }, health: 100, isHorizontal: false },
-      { id: 17, position: { x: 720, y: 280 }, health: 100, isHorizontal: false },
-      { id: 18, position: { x: 520, y: 420 }, health: 100, isHorizontal: false },
-      { id: 19, position: { x: 720, y: 420 }, health: 100, isHorizontal: false },
-    ],
-    portals: [],
-    lastPortalSpawn: Date.now()
-  };
-  
-  gameStates.set(lobbyId, state);
-  return state;
-}
-
+/**
+ * Handle join game message
+ * @param {WebSocket} ws - WebSocket connection
+ * @param {Object} message - Join game message
+ * @param {WebSocketServer} wss - WebSocket server
+ */
 async function handleJoinGame(ws, message, wss) {
   const { lobbyId, userId, username } = message;
 
   console.log(`[WebRTC] handleJoinGame - User ${userId} joining lobby ${lobbyId}`);
 
+  // Get or create lobby
+  const lobby = getOrCreateLobby(lobbyId);
+
   // Add connection to lobby
-  if (!connections.has(lobbyId)) {
-    connections.set(lobbyId, new Set());
-  }
-  connections.get(lobbyId).add(ws);
+  lobby.addConnection(ws, userId);
 
-  // Add socket to user's set of sockets
-  if (!userSockets.has(userId)) {
-    userSockets.set(userId, new Set());
-  }
-  userSockets.get(userId).add(ws);
+  // Get the default game
+  const game = lobby.getDefaultGame();
 
-  console.log(`[WebRTC] User ${userId} now has ${userSockets.get(userId).size} socket(s)`);
-  console.log(`[WebRTC] Total users in userSockets: ${userSockets.size}`);
-  const state = initializeGameState(lobbyId);
+  // Get lobby info to determine player order
+  const lobbyInfo = await getLobby(lobbyId);
+  const playerList = lobbyInfo && lobbyInfo.players ? lobbyInfo.players : [userId];
 
-  // Get lobby to determine player order
-  const lobby = await getLobby(lobbyId);
-  const playerList = lobby && lobby.players ? lobby.players : [userId];
-
-  if (!state.players[userId]) {
-    // Define fixed spawn positions for 4 players
-    const spawnPositions = [
-      { x: 180, y: 125 },   // Player 1: Top-Left
-      { x: 1160, y: 125 },  // Player 2: Top-Right
-      { x: 1160, y: 625 },  // Player 3: Bottom-Right
-      { x: 180, y: 625 }    // Player 4: Bottom-Left
-    ];
-    
-    const spawnIndex = playerList.indexOf(userId); 
-    const spawnPos = spawnPositions[spawnIndex];
-    
-    state.players[userId] = {
-      position: { x: spawnPos.x, y: spawnPos.y },
-      rotation: 0,
-      velocity: { x: 0, y: 0 },
-      health: 100,
-      speed: 200,
-      kills: 0,
-      deaths: 0,
-      username: username
-    };
-    console.log(`[gameServer] Initialized player ${userId} at spawn ${spawnIndex + 1} (${spawnPos.x}, ${spawnPos.y})`);
+  // Add player to game if not already present
+  if (!game.getPlayer(userId)) {
+    const spawnIndex = playerList.indexOf(userId);
+    game.addPlayer(userId, username, spawnIndex);
   }
 
   // Send confirmation and player list to the joining player
@@ -380,485 +259,113 @@ async function handleJoinGame(ws, message, wss) {
     lobbyId,
     userId,
     players: playerList,
-    walls: state.walls,      
-    portals: state.portals   
+    walls: game.walls,
+    portals: game.portals
   }));
 
   // Broadcast to all players in lobby
-  broadcast(lobbyId, {
+  lobby.broadcast({
     type: 'player_joined',
     userId,
     username
   }, ws);
 
   try {
-    const lobby = await getLobby(lobbyId);
-    if (lobby && lobby.playerModels) {
+    const lobbyInfo = await getLobby(lobbyId);
+    if (lobbyInfo && lobbyInfo.playerModels) {
       ws.send(JSON.stringify({
         type: 'player_model_state',
         lobbyId,
-        playerModels: lobby.playerModels
+        playerModels: lobbyInfo.playerModels
       }));
     }
   } catch (error) {
     console.error('Failed to send player model state:', error);
   }
 
-  // Immediately broadcast the current game state to all clients so everyone sees all players
-  broadcast(lobbyId, {
+  // Immediately broadcast the current game state to all clients
+  lobby.broadcast({
     type: 'game_state',
-    state: gameStates.get(lobbyId),
+    state: game.getState(),
     timestamp: Date.now()
   });
 
   console.log(`Player ${username} joined lobby ${lobbyId}`);
 }
 
-async function handleGameState(ws, message, lobbyId) {
-  // Broadcast game state to all players except sender
-  if (lobbyId) {
-    broadcast(lobbyId, {
-      type: 'game_state',
-      state: message.state,
-      timestamp: Date.now()
-    }, ws);
-  }
-}
-
+/**
+ * Handle player input
+ * @param {WebSocket} ws - WebSocket connection
+ * @param {Object} message - Player input message
+ * @param {string} lobbyId - Lobby ID
+ */
 function handlePlayerInput(ws, message, lobbyId) {
-  // Store latest input for this player
   if (!lobbyId || !message.userId) return;
-  if (!playerInputs.has(lobbyId)) playerInputs.set(lobbyId, {});
-  playerInputs.get(lobbyId)[message.userId] = message.input;
 
-  // Handle shoot input
-  if (message.input && message.input.shoot) {
-    const state = gameStates.get(lobbyId);
-    if (state) {
-      // Create a bullet with unique id
-      const bulletId = Date.now().toString() + Math.floor(Math.random() * 10000);
-      const shooter = state.players[message.userId];
-      if (shooter) {
-        const pos = message.input.shoot.position;
-        const rot = message.input.shoot.rotation;
-        if (!isFinite(rot) || isNaN(rot)) {
-          console.warn('Invalid rotation received from client:', rot);
-          return; // Don't create bullet with invalid rotation
-        }
-        const speed = 600;
-        const bulletObj = {
-          id: bulletId,
-          position: { x: pos.x, y: pos.y },
-          velocity: { x: Math.cos(rot) * speed, y: Math.sin(rot) * speed },
-          rotation: rot,
-          shooterId: message.userId,
-          createdAt: Date.now()
-        };
-        state.bullets.push(bulletObj);
-      }
-    }
-  }
+  const lobby = lobbies.get(lobbyId);
+  if (!lobby) return;
+
+  const game = lobby.getDefaultGame();
+  if (!game) return;
+
+  game.handlePlayerInput(message.userId, message.input);
 }
-
-// Game configuration
-const GAME_WIDTH = 1280;
-const GAME_HEIGHT = 720;
-
-// Collision detection constants
-const PLAYER_RADIUS = 25;
-const WALL_WIDTH = 40;
-const WALL_HEIGHT = 100;
-const BULLET_RADIUS = 10;
 
 /**
- * Check if a circle collides with a rectangle (AABB collision)
- * @param {Object} circle - {x, y, radius}
- * @param {Object} rect - {x, y, width, height}
- * @returns {boolean}
+ * Handle player teleported
+ * @param {Object} message - Teleport message
+ * @param {string} lobbyId - Lobby ID
  */
-function checkCircleRectCollision(circle, rect) {
-  // Find the closest point on the rectangle to the circle's center
-  const closestX = Math.max(rect.x - rect.width / 2, Math.min(circle.x, rect.x + rect.width / 2));
-  const closestY = Math.max(rect.y - rect.height / 2, Math.min(circle.y, rect.y + rect.height / 2));
-  
-  // Calculate distance between circle's center and this closest point
-  const distanceX = circle.x - closestX;
-  const distanceY = circle.y - closestY;
-  const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
-  
-  // Collision occurs if distance is less than circle's radius
-  return distanceSquared < (circle.radius * circle.radius);
+function handlePlayerTeleported(message, lobbyId) {
+  if (!lobbyId || !message.userId) return;
+
+  const lobby = lobbies.get(lobbyId);
+  if (!lobby) return;
+
+  const game = lobby.getDefaultGame();
+  if (!game) return;
+
+  game.teleportPlayer(message.userId, message.position);
 }
 
-// Main game loop for all lobbies
-// Calculates new player positions, handles collisions, and broadcasts state
-let tickCount = 0;
-setInterval(() => {
-  const now = Date.now();
-  const dt = TICK_RATE / 1000;
-
-  for (const [lobbyId, state] of gameStates.entries()) {
-    const inputs = playerInputs.get(lobbyId) || {};
-    let stateChanged = false;
-
-    // Update each player's state based on their input
-    for (const userId in state.players) {
-      const input = inputs[userId];
-      const player = state.players[userId];
-
-      // Defensive: ensure player has position, rotation, and speed
-      if (!player.position) player.position = { x: 100, y: 100 };
-      if (typeof player.rotation !== 'number') player.rotation = 0;
-      if (typeof player.speed !== 'number') player.speed = 200;
-
-      const oldX = player.position.x;
-      const oldY = player.position.y;
-      const oldRot = player.rotation;
-
-      if (input) {
-        // Apply incremental clockwise rotation if present
-        if (typeof input.rotation === 'number') {
-          const rotationSpeed = player.rotationSpeed || Math.PI; // radians/sec
-          player.rotation += input.rotation * rotationSpeed * dt;
-          
-          // Normalize rotation to prevent infinity (keep between -2π and 2π)
-          const TWO_PI = Math.PI * 2;
-          while (player.rotation > TWO_PI) player.rotation -= TWO_PI;
-          while (player.rotation < -TWO_PI) player.rotation += TWO_PI;
-          
-          // Ensure it's a valid number
-          if (!isFinite(player.rotation)) {
-            player.rotation = 0;
-          }
-        }
-      }
-      // Always apply forward velocity in direction of player.rotation
-      const forwardSpeed = player.forwardSpeed || player.speed * 0.5;
-
-      // Calculate new position
-      const newX = player.position.x + Math.cos(player.rotation) * forwardSpeed * dt;
-      const newY = player.position.y + Math.sin(player.rotation) * forwardSpeed * dt;
-      
-      // Check collision with walls
-      let canMove = true;
-      if (state.walls && state.walls.length > 0) {
-        for (const wall of state.walls) {
-          if (!wall || wall.health <= 0) continue;
-          
-          const collision = checkCircleRectCollision(
-            { x: newX, y: newY, radius: PLAYER_RADIUS },
-            { x: wall.position.x, y: wall.position.y, width: WALL_WIDTH, height: WALL_HEIGHT }
-          );
-          
-          if (collision) {
-            canMove = false;
-            break;
-          }
-        }
-      }
-      
-      // Only update position if no collision
-      if (canMove) {
-        player.position.x = newX;
-        player.position.y = newY;
-      } else {
-        // Player hit a wall, keep old position
-        stateChanged = true; // Still mark as changed to sync clients
-      }
-      // Defensive: ensure player has position, rotation, and speed
-      if (!player.position) player.position = { x: 100, y: 100 };
-      if (typeof player.rotation !== 'number') player.rotation = 0;
-      if (typeof player.speed !== 'number') player.speed = 200;
-
-      if (input) {
-        // Apply incremental clockwise rotation if present
-        if (typeof input.rotation === 'number') {
-          const rotationSpeed = player.rotationSpeed || Math.PI; // radians/sec
-          player.rotation += input.rotation * rotationSpeed * dt;
-          
-          // Normalize rotation to prevent infinity (keep between -2π and 2π)
-          const TWO_PI = Math.PI * 2;
-          while (player.rotation > TWO_PI) player.rotation -= TWO_PI;
-          while (player.rotation < -TWO_PI) player.rotation += TWO_PI;
-          
-          // Ensure it's a valid number
-          if (!isFinite(player.rotation)) {
-            player.rotation = 0;
-          }
-        }
-      }
-
-      // Wrap around screen edges
-      player.position.x = (player.position.x + GAME_WIDTH) % GAME_WIDTH;
-      player.position.y = (player.position.y + GAME_HEIGHT) % GAME_HEIGHT;
-
-      // Track if player state changed
-      if (
-        player.position.x !== oldX ||
-        player.position.y !== oldY ||
-        player.rotation !== oldRot
-      ) {
-        stateChanged = true;
-      }
-    }
-
-    // Update bullets - use in-place filtering for better performance
-    let writeIdx = 0;
-    for (let readIdx = 0; readIdx < state.bullets.length; readIdx++) {
-      const bullet = state.bullets[readIdx];
-      bullet.position.x += bullet.velocity.x * dt;
-      bullet.position.y += bullet.velocity.y * dt;
-
-      // CHECK BULLET-WALL COLLISION
-      let bulletHitWall = false;
-      if (state.walls && state.walls.length > 0) {
-        for (let wi = state.walls.length - 1; wi >= 0; wi--) {
-          const wall = state.walls[wi];
-          if (!wall || wall.health <= 0) continue;
-          
-          const collision = checkCircleRectCollision(
-            { x: bullet.position.x, y: bullet.position.y, radius: BULLET_RADIUS },
-            { x: wall.position.x, y: wall.position.y, width: WALL_WIDTH, height: WALL_HEIGHT }
-          );
-          
-          if (collision) {
-            // Damage the wall
-            wall.health -= 25; // Same as bullet damage
-            console.log(`[${lobbyId}] Bullet hit wall ${wi}, health: ${wall.health}`);
-            
-            // Remove wall if destroyed
-            if (wall.health <= 0) {
-              console.log(`[${lobbyId}] Wall ${wall.id} destroyed!`);
-              
-              // Broadcast wall destruction
-              broadcast(lobbyId, {
-                type: 'wall_destroyed',
-                wallId: wall.id
-              });
-              
-              state.walls.splice(wi, 1);
-            }
-            
-            bulletHitWall = true;
-            stateChanged = true;
-            break;
-          }
-        }
-      }
-      
-      if (bulletHitWall) {
-        continue; // Skip this bullet (effectively removes it)
-      }
-
-      // Remove bullets that go off screen or are too old
-      if (bullet.position.x < 0 || bullet.position.x > GAME_WIDTH ||
-        bullet.position.y < 0 || bullet.position.y > GAME_HEIGHT ||
-        now - bullet.createdAt > 2000) {
-        stateChanged = true;
-        continue; // Skip this bullet (effectively removes it)
-      }
-
-      // Keep this bullet
-      if (writeIdx !== readIdx) {
-        state.bullets[writeIdx] = bullet;
-      }
-      writeIdx++;
-    }
-    state.bullets.length = writeIdx;
-
-    // Server-side collision detection: check bullets against players and apply damage
-    // Minimal authoritative hit detection to keep clients in sync.
-    const HIT_RADIUS = 20; // pixels
-    const DAMAGE = 50;
-    const HIT_RADIUS_SQ = HIT_RADIUS * HIT_RADIUS;
-
-    for (let bi = state.bullets.length - 1; bi >= 0; bi--) {
-      const bullet = state.bullets[bi];
-      // defensive checks
-      if (!bullet || !bullet.position || typeof bullet.shooterId === 'undefined') continue;
-
-      let bulletHit = false;
-      for (const pidStr in state.players) {
-        const pid = parseInt(pidStr);
-        if (pid === bullet.shooterId) continue; // don't hit shooter
-        const player = state.players[pidStr];
-        if (!player || !player.position) continue;
-
-        const dx = bullet.position.x - player.position.x;
-        const dy = bullet.position.y - player.position.y;
-        if (dx * dx + dy * dy <= HIT_RADIUS_SQ) {
-          // Hit detected — apply damage
-          player.health = (typeof player.health === 'number' ? player.health : 100) - DAMAGE;
-          stateChanged = true;
-
-          // Remove the bullet
-          state.bullets.splice(bi, 1);
-
-          // Handle player death
-          if (player.health <= 0) {
-            // Update in-memory stats
-            if (!state.players[bullet.shooterId]) {
-              state.players[bullet.shooterId] = {
-                kills: 0, deaths: 0, health: 100,
-                position: { x: 100, y: 100 },
-                rotation: 0,
-                velocity: { x: 0, y: 0 },
-                speed: 200
-              };
-            }
-            state.players[bullet.shooterId].kills = (state.players[bullet.shooterId].kills || 0) + 1;
-            player.deaths = (player.deaths || 0) + 1;
-
-            // Broadcast kill event to lobby
-            broadcast(lobbyId, {
-              type: 'kill',
-              killerId: bullet.shooterId,
-              victimId: pid,
-              timestamp: now
-            });
-
-            // Check for win condition (5 kills)
-            if (state.players[bullet.shooterId].kills >= 5) {
-              // Game over - someone won!
-              handleGameOver(lobbyId, bullet.shooterId);
-            } else {
-              // Respawn player (reset health and reuse position object)
-              player.health = 100;
-              if (!player.position) player.position = { x: 0, y: 0 };
-              
-              // Use fixed spawn positions
-              const spawnPositions = [
-                { x: 200, y: 100 },   // Top-Left
-                { x: 1000, y: 100 },  // Top-Right
-                { x: 1000, y: 620 },  // Bottom-Right
-                { x: 200, y: 620 }    // Bottom-Left
-              ];
-              const playerIds = Object.keys(state.players);
-              const playerIndex = playerIds.indexOf(String(pid));
-              const spawnPos = spawnPositions[playerIndex % 4];
-              player.position.x = spawnPos.x;
-              player.position.y = spawnPos.y;
-            }
-          }
-
-          // Bullet handled, stop checking other players for this bullet
-          bulletHit = true;
-          break;
-        }
-      }
-
-      // If bullet was removed by hit, skip to next bullet
-      if (bulletHit) continue;
-    }
-    
-    // Only broadcast if state changed or every 3rd tick to reduce network load
-    // Portal spawning logic - spawn every 20 seconds if no portals exist
-    const PORTAL_SPAWN_INTERVAL = 20000; // 20 seconds
-    const PORTAL_LIFETIME = 15000; // 15 seconds
-    
-    if (!state.portals) state.portals = [];
-    if (!state.lastPortalSpawn) state.lastPortalSpawn = now;
-
-    if (state.portals.length === 0 && now - state.lastPortalSpawn > PORTAL_SPAWN_INTERVAL) {
-      // Define fixed portal spawn locations that match the maze layout
-      const portalSpawnLocations = [
-        // Top left opening
-        { x: 150, y: 100 },
-        // Top right opening  
-        { x: 1130, y: 100 },
-        // Left middle opening
-        { x: 100, y: 360 },
-        // Right middle opening
-        { x: 1180, y: 360 },
-        // Bottom left opening
-        { x: 150, y: 620 },
-        // Bottom right opening
-        { x: 1130, y: 620 },
-        // Center gaps
-        { x: 640, y: 100 },
-        { x: 640, y: 620 }
-      ];
-      
-      // Randomly select 2 different locations for the portal pair
-      const shuffled = [...portalSpawnLocations].sort(() => Math.random() - 0.5);
-      const portal1 = {
-        id: 0,
-        position: shuffled[0]
-      };
-      
-      const portal2 = {
-        id: 1,
-        position: shuffled[1]
-      };
-      
-      state.portals = [portal1, portal2];
-      state.lastPortalSpawn = now;
-      stateChanged = true;
-      
-      console.log(`[${lobbyId}] Spawned portals at:`, portal1.position, portal2.position);
-      
-      // Broadcast portal spawn immediately
-      broadcast(lobbyId, {
-        type: 'portals_spawned',
-        portals: state.portals
-      });
-      
-      // Schedule portal removal after 15 seconds
-      setTimeout(() => {
-        if (gameStates.has(lobbyId)) {
-          const currentState = gameStates.get(lobbyId);
-          currentState.portals = [];
-          console.log(`[${lobbyId}] Removed portals`);
-          
-          broadcast(lobbyId, {
-            type: 'portals_removed'
-          });
-        }
-      }, PORTAL_LIFETIME);
-    }
-    
-    // Only broadcast if state changed or every 3rd tick to reduce network load
-    if (stateChanged || tickCount % 3 === 0) {
-      broadcast(lobbyId, {
-        type: 'game_state',
-        state,
-        timestamp: now
-      });
-    }
-  }
-  tickCount++;
-}, TICK_RATE);
-
+/**
+ * Handle kill event
+ * @param {Object} message - Kill message
+ * @param {string} lobbyId - Lobby ID
+ */
 async function handleKill(message, lobbyId) {
   const { killerId, victimId, sessionId } = message;
 
-  // Debug: log incoming kill payload and socket mapping
   console.log('[gameServer] handleKill called with:', { killerId, victimId, sessionId, lobbyId });
-  console.log('[gameServer] userSockets has killerId?', userSockets.has(killerId));
 
   try {
-    // Minimal server-side verification to avoid obvious spoofing:
-    // Verify there exists a recent bullet in the authoritative game state
-    // that was fired by the claimed killer and is close to the victim's server position.
-    const MAX_BULLET_AGE_MS = 500; // how old a bullet may be and still considered valid
-    const MAX_HIT_DISTANCE = 48; // pixels (tweak as needed for your game scale)
+    const MAX_BULLET_AGE_MS = 500;
+    const MAX_HIT_DISTANCE = 48;
 
-    if (!lobbyId || !gameStates.has(lobbyId)) {
-      console.log('[gameServer] handleKill: no game state for lobby', lobbyId);
-      return; // ignore invalid report
-    }
-
-    const state = gameStates.get(lobbyId);
-    if (!state.players || !state.players[victimId]) {
-      console.log('[gameServer] handleKill: victim not found in state', victimId);
+    if (!lobbyId || !lobbies.has(lobbyId)) {
+      console.log('[gameServer] handleKill: no lobby found', lobbyId);
       return;
     }
 
-    const victimPos = state.players[victimId].position;
+    const lobby = lobbies.get(lobbyId);
+    const game = lobby.getDefaultGame();
+
+    if (!game) {
+      console.log('[gameServer] handleKill: no game found in lobby', lobbyId);
+      return;
+    }
+
+    const victim = game.getPlayer(victimId);
+    if (!victim) {
+      console.log('[gameServer] handleKill: victim not found', victimId);
+      return;
+    }
+
+    const victimPos = victim.position;
     const now = Date.now();
 
     // Find a matching bullet
-    const matchingBullet = (state.bullets || []).find(b => {
+    const matchingBullet = (game.bullets || []).find(b => {
       try {
         if (b.shooterId != killerId) return false;
         if (!b.position || typeof b.createdAt !== 'number') return false;
@@ -873,8 +380,8 @@ async function handleKill(message, lobbyId) {
     });
 
     if (!matchingBullet) {
-      console.log('[gameServer] handleKill: no matching bullet found — rejecting kill report', { killerId, victimId, lobbyId });
-      return; // reject the kill report silently
+      console.log('[gameServer] handleKill: no matching bullet found — rejecting kill report');
+      return;
     }
 
     dbQueue.push(() => pool.query(
@@ -888,20 +395,22 @@ async function handleKill(message, lobbyId) {
     processDbQueue();
 
     // Broadcast kill event
-    if (lobbyId) {
-      broadcast(lobbyId, {
-        type: 'kill',
-        killerId,
-        victimId,
-        timestamp: Date.now()
-      });
-    }
+    lobby.broadcast({
+      type: 'kill',
+      killerId,
+      victimId,
+      timestamp: Date.now()
+    });
 
   } catch (error) {
     console.error('Kill tracking error:', error);
   }
 }
 
+/**
+ * Handle start game
+ * @param {string} lobbyId - Lobby ID
+ */
 async function handleStartGame(lobbyId) {
   try {
     // Update lobby status
@@ -923,8 +432,8 @@ async function handleStartGame(lobbyId) {
       const sessionId = result.rows[0].id;
 
       // Add participants
-      const lobby = await getLobby(lobbyId);
-      for (const userId of lobby.players) {
+      const lobbyInfo = await getLobby(lobbyId);
+      for (const userId of lobbyInfo.players) {
         await pool.query(
           'INSERT INTO game_participants (session_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
           [sessionId, userId]
@@ -933,11 +442,14 @@ async function handleStartGame(lobbyId) {
     }
 
     // Broadcast game start
-    broadcast(lobbyId, {
-      type: 'game_started',
-      lobbyId,
-      timestamp: Date.now()
-    });
+    const lobby = lobbies.get(lobbyId);
+    if (lobby) {
+      lobby.broadcast({
+        type: 'game_started',
+        lobbyId,
+        timestamp: Date.now()
+      });
+    }
 
     console.log(`Game started in lobby ${lobbyId}`);
 
@@ -946,24 +458,28 @@ async function handleStartGame(lobbyId) {
   }
 }
 
+/**
+ * Handle game over
+ * @param {string} lobbyId - Lobby ID
+ * @param {number} winnerId - Winner user ID
+ */
 async function handleGameOver(lobbyId, winnerId) {
   try {
-    const state = gameStates.get(lobbyId);
-    if (!state) return;
+    const lobby = lobbies.get(lobbyId);
+    if (!lobby) return;
+
+    const game = lobby.getDefaultGame();
+    if (!game) return;
 
     // Prepare results array with player stats
     const results = [];
-    const playerList = Object.keys(state.players);
-
-    for (const playerIdStr of playerList) {
-      const playerId = parseInt(playerIdStr);
-      const player = state.players[playerIdStr];
+    for (const [userId, player] of game.players) {
       results.push({
-        userId: playerId,
+        userId: userId,
         kills: player.kills || 0,
         deaths: player.deaths || 0,
-        placement: playerId === winnerId ? 1 : 2,
-        username: player.username || `Player ${playerId}`
+        placement: userId === winnerId ? 1 : 2,
+        username: player.username || `Player ${userId}`
       });
     }
 
@@ -1013,27 +529,27 @@ async function handleGameOver(lobbyId, winnerId) {
     }
 
     // Update lobby status and reset player models
-    const lobby = await getLobby(lobbyId);
-    console.log('[handleGameOver] Lobby data:', JSON.stringify(lobby, null, 2));
-    if (lobby) {
-      lobby.status = 'waiting';
+    const lobbyInfo = await getLobby(lobbyId);
+    console.log('[handleGameOver] Lobby data:', JSON.stringify(lobbyInfo, null, 2));
+    if (lobbyInfo) {
+      lobbyInfo.status = 'waiting';
       // Reset player models so they can select again
-      if (lobby.playerModels) {
-        for (const playerId in lobby.playerModels) {
-          lobby.playerModels[playerId] = null;
+      if (lobbyInfo.playerModels) {
+        for (const playerId in lobbyInfo.playerModels) {
+          lobbyInfo.playerModels[playerId] = null;
         }
       }
-      await updateLobby(lobbyId, lobby);
+      await updateLobby(lobbyId, lobbyInfo);
     }
 
-    console.log('[handleGameOver] Broadcasting game_over with hostUserId:', lobby?.hostUserId);
+    console.log('[handleGameOver] Broadcasting game_over with hostUserId:', lobbyInfo?.hostUserId);
 
     // Broadcast game over
-    broadcast(lobbyId, {
+    lobby.broadcast({
       type: 'game_over',
       winnerId,
       results,
-      hostUserId: lobby?.hostUserId,
+      hostUserId: lobbyInfo?.hostUserId,
       timestamp: Date.now()
     });
 
@@ -1044,17 +560,22 @@ async function handleGameOver(lobbyId, winnerId) {
   }
 }
 
+/**
+ * Handle host return to waiting
+ * @param {string} lobbyId - Lobby ID
+ * @param {number} userId - User ID
+ */
 async function handleHostReturnToWaiting(lobbyId, userId) {
   try {
-    const lobby = await getLobby(lobbyId);
+    const lobbyInfo = await getLobby(lobbyId);
 
-    if (!lobby) {
+    if (!lobbyInfo) {
       console.log('handleHostReturnToWaiting: Lobby not found');
       return;
     }
 
     // Verify the user is the host
-    if (lobby.hostUserId !== userId) {
+    if (lobbyInfo.hostUserId !== userId) {
       console.log('handleHostReturnToWaiting: User is not the host');
       return;
     }
@@ -1063,16 +584,21 @@ async function handleHostReturnToWaiting(lobbyId, userId) {
     const updatedLobby = await getLobby(lobbyId);
 
     // Broadcast return to waiting room
-    broadcast(lobbyId, {
-      type: 'return_to_waiting',
-      lobbyId,
-      playerModels: updatedLobby?.playerModels || {},
-      timestamp: Date.now()
-    });
+    const lobby = lobbies.get(lobbyId);
+    if (lobby) {
+      lobby.broadcast({
+        type: 'return_to_waiting',
+        lobbyId,
+        playerModels: updatedLobby?.playerModels || {},
+        timestamp: Date.now()
+      });
+    }
 
-    // Clean up game state
-    gameStates.delete(lobbyId);
-    playerInputs.delete(lobbyId);
+    // Clean up game state - recreate the default game
+    if (lobby) {
+      lobby.deleteGame(lobby.defaultGameId);
+      lobby.createGame(lobby.defaultGameId);
+    }
 
     console.log(`Host ${userId} returned lobby ${lobbyId} to waiting room`);
 
@@ -1081,6 +607,11 @@ async function handleHostReturnToWaiting(lobbyId, userId) {
   }
 }
 
+/**
+ * Handle end game
+ * @param {string} lobbyId - Lobby ID
+ * @param {Array} results - Game results
+ */
 async function handleEndGame(lobbyId, results) {
   try {
     // Update game session
@@ -1123,11 +654,14 @@ async function handleEndGame(lobbyId, results) {
     }
 
     // Broadcast game end
-    broadcast(lobbyId, {
-      type: 'game_ended',
-      results,
-      timestamp: Date.now()
-    });
+    const lobby = lobbies.get(lobbyId);
+    if (lobby) {
+      lobby.broadcast({
+        type: 'game_ended',
+        results,
+        timestamp: Date.now()
+      });
+    }
 
     console.log(`Game ended in lobby ${lobbyId}`);
 
@@ -1136,48 +670,48 @@ async function handleEndGame(lobbyId, results) {
   }
 }
 
+/**
+ * Handle play sound
+ * @param {WebSocket} ws - WebSocket connection
+ * @param {Object} message - Play sound message
+ */
 function handlePlaySound(ws, message) {
   // Validate required fields
   if (!message.sound) return;
 
   // Determine which lobby the sender belongs to
   const lobbyId = ws.lobbyId;
-  if (!lobbyId || !lobbies[lobbyId]) return;
+  if (!lobbyId || !lobbies.has(lobbyId)) return;
 
-  // Broadcast to everyone except the sender
-  lobbies[lobbyId].forEach(player => {
-    if (player !== ws && player.readyState === WebSocket.OPEN) {
-      player.send(JSON.stringify({
-        type: "play_sound",
-        sound: message.sound,
-        position: message.position || null
-      }));
-    }
-  });
+  const lobby = lobbies.get(lobbyId);
+  lobby.broadcast({
+    type: "play_sound",
+    sound: message.sound,
+    position: message.position || null
+  }, ws);
 }
-
-
 
 // ==========================
 // Voice signalling handlers
 // ==========================
+
+/**
+ * Handle user joined voice
+ * @param {string} roomId - Room ID (lobbyId)
+ * @param {number} userId - User ID
+ */
 export async function handleJoinedVoice(roomId, userId) {
   console.log(`[WebRTC] User ${userId} joining voice room ${roomId}`);
   console.log(`[WebRTC] ICE servers being sent to client:`, JSON.stringify(ICE_SERVERS));
 
-  const room = ensureVoiceRoom(roomId);
-  room.add(userId);
-  voicePresence.set(userId, { roomId, joinedAt: Date.now() });
+  const lobby = getOrCreateLobby(roomId);
+  lobby.joinVoice(userId);
 
-  // Reply to joiner with current peers and ICE config
-  const existing = Array.from(room).filter(id => id !== userId);
+  // Get existing peers
+  const existing = lobby.getVoiceMembers(userId);
   console.log(`[WebRTC] Room ${roomId} existing peers:`, existing);
-  console.log(`[WebRTC] Sending peer list to ${userId}:`, existing.map(pid => ({
-    userId: pid,
-    initiatorHint: buildPeerInitHint(userId, pid)
-  })));
 
-  sendToUser(userId, {
+  lobby.sendToUser(userId, {
     type: 'voice_peer_list',
     roomId,
     peers: existing.map(pid => ({ userId: pid, initiatorHint: buildPeerInitHint(userId, pid) })),
@@ -1186,86 +720,71 @@ export async function handleJoinedVoice(roomId, userId) {
 
   // Notify others
   console.log(`[WebRTC] Notifying existing peers in room ${roomId} about new user ${userId}`);
-  broadcastVoice(roomId, {
+  lobby.broadcastVoice({
     type: 'voice_peer_joined',
     roomId,
     userId,
   }, userId);
 
-  console.log(`[WebRTC] Room ${roomId} now has ${room.size} members:`, Array.from(room));
+  console.log(`[WebRTC] Room ${roomId} now has ${lobby.voiceRoom.size} members:`, Array.from(lobby.voiceRoom));
 }
 
+/**
+ * Handle user left voice
+ * @param {string} roomId - Room ID (lobbyId)
+ * @param {number} userId - User ID
+ */
 export async function handleLeaveVoice(roomId, userId) {
   console.log(`[WebRTC] User ${userId} leaving voice room ${roomId}`);
 
-  const room = voiceRooms.get(roomId);
-  if (!room) {
+  const lobby = lobbies.get(roomId);
+  if (!lobby) {
     console.log(`[WebRTC] Room ${roomId} not found for user ${userId}`);
     return;
   }
 
-  const hadUser = room.has(userId);
-  room.delete(userId);
-  voicePresence.delete(userId);
+  lobby.leaveVoice(userId);
 
-  console.log(`[WebRTC] User ${userId} ${hadUser ? 'removed from' : 'was not in'} room ${roomId}`);
-  console.log(`[WebRTC] Room ${roomId} remaining members:`, Array.from(room));
+  lobby.broadcastVoice({ type: 'voice_peer_left', roomId, userId });
 
-  broadcastVoice(roomId, { type: 'voice_peer_left', roomId, userId });
-
-  if (room.size === 0) {
-    console.log(`[WebRTC] Room ${roomId} is empty, deleting`);
-    voiceRooms.delete(roomId);
+  // Clean up empty lobby
+  if (lobby.isEmpty()) {
+    lobbies.delete(roomId);
+    console.log(`[Lobby ${roomId}] Deleted (empty after voice leave)`);
   }
 }
 
+/**
+ * Handle voice signal
+ * @param {Object} params - Signal parameters
+ */
 export async function handleVoiceSignal({ roomId, fromUserId, toUserId, data }) {
   console.log(`[WebRTC] Signal from ${fromUserId} to ${toUserId} in room ${roomId}`);
   console.log(`[WebRTC] Signal type:`, data?.type || 'unknown');
 
-  const room = voiceRooms.get(roomId);
-  if (!room) {
+  const lobby = lobbies.get(roomId);
+  if (!lobby) {
     console.log(`[WebRTC] ERROR: Room ${roomId} not found`);
     return;
   }
 
-  if (!room.has(fromUserId)) {
+  if (!lobby.isInVoice(fromUserId)) {
     console.log(`[WebRTC] ERROR: Sender ${fromUserId} not in room ${roomId}`);
     return;
   }
 
-  if (!room.has(toUserId)) {
+  if (!lobby.isInVoice(toUserId)) {
     console.log(`[WebRTC] ERROR: Recipient ${toUserId} not in room ${roomId}`);
     return;
   }
 
   console.log(`[WebRTC] Forwarding signal from ${fromUserId} to ${toUserId}`);
-  sendToUser(toUserId, {
+  lobby.sendToUser(toUserId, {
     type: 'voice_signal',
     roomId,
     fromUserId,
     data,
   });
-}
-
-function broadcast(lobbyId, message, excludeWs = null) {
-  console.log(`[Broadcast] Attempting to broadcast ${message.type} to lobby ${lobbyId}`);
-  console.log(`[Broadcast] Connections for lobby ${lobbyId}:`, connections.has(lobbyId) ? connections.get(lobbyId).size : 0);
-
-  if (!connections.has(lobbyId)) {
-    console.log(`[Broadcast] No connections found for lobby ${lobbyId}`);
-    return;
-  }
-
-  const data = JSON.stringify(message);
-  let sentCount = 0;
-  connections.get(lobbyId).forEach((client) => {
-    if (client !== excludeWs && client.readyState === 1) { // OPEN state
-      client.send(data);
-      sentCount++;
-    }
-  });
-  console.log(`[Broadcast] Sent ${message.type} to ${sentCount} client(s) in lobby ${lobbyId}`);
 }
 
 // Broadcast to all connected clients (for lobby list updates)
@@ -1278,44 +797,51 @@ function broadcastLobbyListUpdate() {
   });
 }
 
-async function handleWebRTCOffer(ws, message, lobbyId) {
-  const { targetUserId, offer } = message;
+// Main game loop for all lobbies
+let tickCount = 0;
+setInterval(() => {
+  const now = Date.now();
+  const dt = TICK_RATE / 1000;
 
-  // Forward offer to target user
-  const targetWs = userSockets.get(targetUserId);
-  if (targetWs && targetWs.readyState === 1) {
-    targetWs.send(JSON.stringify({
-      type: 'webrtc_offer',
-      fromUserId: message.fromUserId,
-      offer: offer
-    }));
+  for (const [lobbyId, lobby] of lobbies.entries()) {
+    for (const [gameId, game] of lobby.games) {
+      // Broadcast callback for game events
+      const broadcastCallback = (message) => {
+        lobby.broadcast(message);
+      };
+
+      // Update game state
+      const result = game.update(dt, broadcastCallback);
+
+      // Handle game over
+      if (result && result.gameOver) {
+        handleGameOver(lobbyId, result.winnerId);
+      }
+
+      // Broadcast game state if changed or every 3rd tick
+      if (result === true || tickCount % 3 === 0) {
+        lobby.broadcast({
+          type: 'game_state',
+          state: game.getState(),
+          timestamp: now
+        });
+      }
+    }
+  }
+  tickCount++;
+}, TICK_RATE);
+
+// Export for use in other modules
+export const voiceRooms = new Map(); // Kept for backward compatibility
+export { lobbies, broadcastLobbyListUpdate };
+
+// Helper functions for backward compatibility
+export function broadcast(lobbyId, message, excludeWs = null) {
+  const lobby = lobbies.get(lobbyId);
+  if (lobby) {
+    lobby.broadcast(message, excludeWs);
   }
 }
 
-async function handleWebRTCAnswer(ws, message, lobbyId) {
-  const { targetUserId, answer } = message;
-
-  const targetWs = userSockets.get(targetUserId);
-  if (targetWs && targetWs.readyState === 1) {
-    targetWs.send(JSON.stringify({
-      type: 'webrtc_answer',
-      fromUserId: message.fromUserId,
-      answer: answer
-    }));
-  }
-}
-
-async function handleICECandidate(ws, message, lobbyId) {
-  const { targetUserId, candidate } = message;
-
-  const targetWs = userSockets.get(targetUserId);
-  if (targetWs && targetWs.readyState === 1) {
-    targetWs.send(JSON.stringify({
-      type: 'webrtc_ice_candidate',
-      fromUserId: message.fromUserId,
-      candidate: candidate
-    }));
-  }
-}
-
-export { connections, userSockets, broadcast, broadcastLobbyListUpdate };
+export const connections = new Map(); // Kept for backward compatibility
+export const userSockets = new Map(); // Kept for backward compatibility
