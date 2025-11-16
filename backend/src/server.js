@@ -14,6 +14,7 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const WS_PORT = process.env.WS_PORT || 3001;
 
 // Middleware
 // Support multiple CORS origins (comma-separated)
@@ -64,13 +65,19 @@ async function startServer() {
     // Create HTTP server with Express app
     const httpServer = createServer(app);
 
-    // Attach WebSocket server to the same HTTP server
-    const wss = new WebSocketServer({ server: httpServer });
+    // Start HTTP server
+    httpServer.listen(PORT, () => {
+      console.log(`🚀 HTTP Server running on port ${PORT}`);
+    });
+
+    // Create separate WebSocket server on different port
+    const wsServer = createServer();
+    const wss = new WebSocketServer({ server: wsServer });
     setupWebSocketServer(wss);
 
-    // Start combined HTTP + WebSocket server on one port
-    httpServer.listen(PORT, () => {
-      console.log(`🚀 HTTP + WebSocket Server running on port ${PORT}`);
+    // Start WebSocket server on separate port
+    wsServer.listen(WS_PORT, () => {
+      console.log(`🎮 WebSocket Server running on port ${WS_PORT}`);
     });
 
   } catch (error) {
