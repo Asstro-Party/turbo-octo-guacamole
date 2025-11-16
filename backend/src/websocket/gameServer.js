@@ -208,10 +208,12 @@ export function setupWebSocketServer(wss) {
         if (lobby) {
           lobby.removeConnection(ws, currentUserId);
 
-          // Clean up empty lobby
+          // Clean up empty in-memory lobby
+          // Note: We do NOT delete from Redis here because players might reconnect
+          // Redis lobbies are only deleted via the explicit /leave API endpoint
           if (lobby.isEmpty()) {
             lobbies.delete(currentLobbyId);
-            console.log(`[Lobby ${currentLobbyId}] Deleted (empty)`);
+            console.log(`[Lobby ${currentLobbyId}] Deleted from memory (empty, players can still reconnect)`);
           }
         }
       }
@@ -234,6 +236,19 @@ async function handleJoinGame(ws, message, wss) {
 
   console.log(`[WebRTC] handleJoinGame - User ${userId} joining lobby ${lobbyId}`);
 
+  // Get lobby info to verify membership
+  const lobbyInfo = await getLobby(lobbyId);
+
+  // Check if user is a member of the lobby
+  if (!lobbyInfo || !lobbyInfo.players || !lobbyInfo.players.includes(userId)) {
+    console.log(`User ${userId} not in lobby ${lobbyId} - rejecting join_game`);
+    ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Not a member of this lobby'
+    }));
+    return;
+  }
+
   // Get or create lobby
   const lobby = getOrCreateLobby(lobbyId);
 
@@ -243,9 +258,8 @@ async function handleJoinGame(ws, message, wss) {
   // Get the default game
   const game = lobby.getDefaultGame();
 
-  // Get lobby info to determine player order
-  const lobbyInfo = await getLobby(lobbyId);
-  const playerList = lobbyInfo && lobbyInfo.players ? lobbyInfo.players : [userId];
+  // Get player list from lobby info
+  const playerList = lobbyInfo.players;
 
   // Add player to game if not already present
   if (!game.getPlayer(userId)) {
@@ -747,10 +761,12 @@ export async function handleLeaveVoice(roomId, userId) {
 
   lobby.broadcastVoice({ type: 'voice_peer_left', roomId, userId });
 
-  // Clean up empty lobby
+  // Clean up empty in-memory lobby
+  // Note: We do NOT delete from Redis here because players might reconnect
+  // Redis lobbies are only deleted via the explicit /leave API endpoint
   if (lobby.isEmpty()) {
     lobbies.delete(roomId);
-    console.log(`[Lobby ${roomId}] Deleted (empty after voice leave)`);
+    console.log(`[Lobby ${roomId}] Deleted from memory (empty after voice leave, players can still reconnect)`);
   }
 }
 
