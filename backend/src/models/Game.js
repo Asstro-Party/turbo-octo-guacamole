@@ -14,6 +14,7 @@ export class Game {
     this.lastPortalSpawn = Date.now();
     this.playerInputs = {}; // userId -> latest input
     this.sessionId = null;
+    this.gameOver = false; // Track if game has ended
 
     // Game configuration
     this.GAME_WIDTH = 1280;
@@ -168,9 +169,14 @@ export class Game {
    * Update game state (called by game loop)
    * @param {number} dt - Delta time in seconds
    * @param {Function} broadcastCallback - Callback to broadcast events
-   * @returns {boolean} True if state changed
+   * @returns {boolean|Object} True if state changed, or {gameOver: true, winnerId} if game ends
    */
   update(dt, broadcastCallback) {
+    // Don't update if game is over
+    if (this.gameOver) {
+      return false;
+    }
+
     let stateChanged = false;
 
     // Update each player's state based on their input
@@ -211,7 +217,15 @@ export class Game {
     stateChanged = this.updateBullets(dt, broadcastCallback) || stateChanged;
 
     // Server-side collision detection: bullets vs players
-    stateChanged = this.handleBulletPlayerCollisions(broadcastCallback) || stateChanged;
+    const collisionResult = this.handleBulletPlayerCollisions(broadcastCallback);
+    
+    // Check if game ended
+    if (collisionResult && typeof collisionResult === 'object' && collisionResult.gameOver) {
+      this.gameOver = true;
+      return collisionResult;
+    }
+    
+    stateChanged = collisionResult || stateChanged;
 
     // Handle portal spawning
     stateChanged = this.updatePortals(broadcastCallback) || stateChanged;
@@ -291,7 +305,7 @@ export class Game {
   /**
    * Handle bullet-player collisions
    * @param {Function} broadcastCallback - Callback to broadcast events
-   * @returns {boolean} True if state changed
+   * @returns {boolean|Object} True if state changed, or {gameOver: true, winnerId} if game ends
    */
   handleBulletPlayerCollisions(broadcastCallback) {
     let stateChanged = false;
@@ -342,6 +356,7 @@ export class Game {
             // Check for win condition
             if (shooter && shooter.kills >= this.KILLS_TO_WIN) {
               // Game over - someone won!
+              console.log(`[Game ${this.gameId}] WIN CONDITION MET! Winner: ${bullet.shooterId} with ${shooter.kills} kills`);
               return { gameOver: true, winnerId: bullet.shooterId };
             }
           }

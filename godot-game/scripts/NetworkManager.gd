@@ -53,6 +53,12 @@ func connect_to_server(p_lobby_id: String, p_user_id: int, p_username: String):
 	user_id = p_user_id
 	username = p_username
 
+	# Increase buffer sizes to prevent "Buffer payload full" errors
+	# Default is 65535 bytes, we increase to 1MB for inbound and 512KB for outbound
+	socket.set_inbound_buffer_size(1024 * 1024)  # 1MB for receiving large game states
+	socket.set_outbound_buffer_size(512 * 1024)  # 512KB for sending data
+	socket.set_max_queued_packets(100)  # Allow more packets in queue
+
 	socket.connect_to_url(ws_url)
 
 func _process(delta):

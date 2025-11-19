@@ -29,6 +29,7 @@ var portal_spawn_interval = 20.0  # How often new portals spawn
 
 var is_host = false
 var current_lobby_id = ""
+var game_over = false  # Track if game has ended
 
 func _ready():
 	# Connect to network manager signals
@@ -138,6 +139,7 @@ func _on_player_joined(user_id: int, username: String):
 
 func _on_game_started():
 	print("Game started!")
+	game_over = false  # Reset game over flag
 	# Reset all player stats
 	for player in players.values():
 		player.kills = 0
@@ -147,6 +149,10 @@ func _on_game_started():
 
 # Update all players from authoritative game state
 func _on_game_state_received(state: Dictionary):
+	# Don't update game state if game is over
+	if game_over:
+		return
+	
 	if not state.has("players"):
 		return
 	# Removed excessive debug logging for performance
@@ -258,10 +264,18 @@ func _on_game_ended(results: Array):
 func _on_game_over_received(winner_id: int, results: Array, host_user_id):
 	print("Game over! Winner: ", winner_id, " Results: ", results, " Host: ", host_user_id)
 
+	# Set game over flag to stop processing game state updates
+	game_over = true
+
 	# Set host flag - ensure type conversion
 	var host_id = int(host_user_id) if host_user_id != null else 0
 	is_host = (local_player_id == host_id)
 	print("[GameManager] Comparing local_player_id: ", local_player_id, " (type: ", typeof(local_player_id), ") with host_id: ", host_id, " (type: ", typeof(host_id), ") -> is_host: ", is_host)
+
+	# Disable all player inputs
+	for player in players.values():
+		if player.has_method("set_game_over"):
+			player.set_game_over(true)
 
 	# Show game over screen
 	if game_over_screen:

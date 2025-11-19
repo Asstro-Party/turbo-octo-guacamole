@@ -611,6 +611,8 @@ async function handleHostReturnToWaiting(lobbyId, userId) {
     if (lobby) {
       lobby.deleteGame(lobby.defaultGameId);
       lobby.createGame(lobby.defaultGameId);
+      // Remove from gameOverLobbies if present
+      gameOverLobbies.delete(lobbyId);
     }
 
     console.log(`Host ${userId} returned lobby ${lobbyId} to waiting room`);
@@ -814,11 +816,18 @@ function broadcastLobbyListUpdate() {
 
 // Main game loop for all lobbies
 let tickCount = 0;
+let gameOverLobbies = new Set(); // Track lobbies that have ended
+
 setInterval(() => {
   const now = Date.now();
   const dt = TICK_RATE / 1000;
 
   for (const [lobbyId, lobby] of lobbies.entries()) {
+    // Skip lobbies that have ended
+    if (gameOverLobbies.has(lobbyId)) {
+      continue;
+    }
+
     for (const [gameId, game] of lobby.games) {
       // Broadcast callback for game events
       const broadcastCallback = (message) => {
@@ -828,9 +837,16 @@ setInterval(() => {
       // Update game state
       const result = game.update(dt, broadcastCallback);
 
-      // Handle game over
-      if (result && result.gameOver) {
+      // Handle game over - check if result is an object with gameOver property
+      if (result && typeof result === 'object' && result.gameOver) {
+        console.log(`[Game Loop] Game over detected in lobby ${lobbyId}, winner: ${result.winnerId}`);
+        gameOverLobbies.add(lobbyId);
         handleGameOver(lobbyId, result.winnerId);
+        // Remove from gameOverLobbies after 30 seconds to allow for rematch
+        setTimeout(() => {
+          gameOverLobbies.delete(lobbyId);
+        }, 30000);
+        continue; // Stop processing this game
       }
 
       // Broadcast game state if changed or every 3rd tick

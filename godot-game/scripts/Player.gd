@@ -18,6 +18,7 @@ var deaths = 0
 var network_manager = null
 var _shoot_cooldown := 0.0
 var _default_texture: Texture2D = null
+var _game_over := false  # Track if game is over
 
 @onready var sprite = $Sprite2D if has_node("Sprite2D") else null
 @onready var gun = $Gun if has_node("Gun") else null
@@ -52,7 +53,7 @@ func setup(p_player_id: int, p_is_local: bool, p_network_manager = null):
 	set_process_input(is_local_player)
 
 func _physics_process(delta):
-	if is_local_player:
+	if is_local_player and not _game_over:
 		_handle_local_input(delta)
 
 	# Update shoot cooldown
@@ -73,7 +74,7 @@ func _handle_local_input(delta):
 		network_manager.send_player_input(input_dict)
 
 func _input(event):
-	if not is_local_player:
+	if not is_local_player or _game_over:
 		return
 	# Handle shooting for spacebar or mouse
 	if (event is InputEventKey and event.pressed and event.keycode == KEY_SPACE and not event.echo) or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
@@ -170,3 +171,7 @@ func _apply_player_model(model_name: String):
 func teleport(new_position: Vector2):
 	position = new_position
 	# Optional: visual effect or invincibility frames
+
+func set_game_over(value: bool):
+	_game_over = value
+	print("[Player ", player_id, "] Game over flag set to: ", value)
