@@ -30,6 +30,10 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     ended_at TIMESTAMP
 );
 
+-- Index for cleanup queries
+CREATE INDEX IF NOT EXISTS idx_game_sessions_cleanup 
+    ON game_sessions(status, ended_at, created_at, started_at);
+
 CREATE TABLE IF NOT EXISTS game_participants (
     id SERIAL PRIMARY KEY,
     session_id INTEGER REFERENCES game_sessions(id) ON DELETE CASCADE,

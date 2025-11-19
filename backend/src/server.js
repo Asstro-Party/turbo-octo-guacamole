@@ -8,7 +8,9 @@ import { connectRedis } from './config/redis.js';
 import authRoutes from './routes/auth.js';
 import profileRoutes from './routes/profile.js';
 import lobbyRoutes from './routes/lobby.js';
+import adminRoutes from './routes/admin.js';
 import { setupWebSocketServer } from './websocket/gameServer.js';
+import { schedulePeriodicCleanup } from './jobs/cleanup.js';
 
 dotenv.config();
 
@@ -46,6 +48,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/lobby', lobbyRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -61,6 +64,9 @@ async function startServer() {
     // Connect to databases
     await connectDB();
     await connectRedis();
+
+    // Schedule periodic cleanup of old game data
+    schedulePeriodicCleanup();
 
     // Create HTTP server with Express app
     const httpServer = createServer(app);
