@@ -11,12 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run test/unit",
-    "test:integration": "vitest run test/integration",
     "test:coverage": "vitest run --coverage",
     "test:load": "artillery run test/load/artillery.yml",
-    "test:load:lobby": "artillery run test/load/scenarios/lobby-flow.yml",
-    "test:load:game": "artillery run test/load/scenarios/game-flow.yml",
-    "test:load:ws": "artillery run test/load/scenarios/websocket-flow.yml",
     "test:load:report": "artillery run test/load/artillery.yml --output report.json && artillery report report.json"
   },
   "dependencies": {
