@@ -1,0 +1,274 @@
+config:
+  target: 'http://localhost:3000'
+  processor: './processor.js'
+  phases:
+    - duration: 15
+      arrivalRate: 5
+      name: "Warm up"
+    - duration: 60
+      arrivalRate: 10
+      name: "Sustained load"
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+
+before:
+  flow:
+    - log: "Starting Artillery load test..."
+
+after:
+  flow:
+    - function: "printEndpointMetrics"
+
+scenarios:
+  # Authentication Flow
+  - name: "User Registration and Login"
+    weight: 30
+    flow:
+      - function: "generateRandomUser"
+      
+      - post:
+          url: "/api/auth/signup"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          json:
+            username: "{{ username }}"
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+            - json: "$.user.id"
+              as: "userId"
+
+      - think: 1
+
+      - post:
+          url: "/api/auth/login"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          json:
+            username: "{{ username }}"
+            password: "{{ password }}"
+
+  # Lobby Operations
+  - name: "Create and Browse Lobbies"
+    weight: 40
+    flow:
+      - function: "generateRandomUser"
+      
+      - post:
+          url: "/api/auth/signup"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          json:
+            username: "{{ username }}"
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+
+      - think: 1
+
+      - post:
+          url: "/api/lobby/create"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            maxPlayers: 4
+          capture:
+            - json: "$.lobbyId"
+              as: "lobbyId"
+
+      - think: 2
+
+      - get:
+          url: "/api/lobby/list"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+      - think: 1
+
+      - get:
+          url: "/api/lobby/{{ lobbyId }}"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+  # Profile Operations
+  - name: "User Profile Updates"
+    weight: 30
+    flow:
+      - function: "generateRandomUser"
+      
+      - post:
+          url: "/api/auth/signup"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          json:
+            username: "{{ username }}"
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+
+      - think: 1
+
+      - get:
+          url: "/api/profile"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+      - think: 1
+
+      - get:
+          url: "/api/profile/games"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          qs:
+            limit: 5
+
+  # Complete Game Flow
+  - name: "Full Game Session"
+    weight: 20
+    flow:
+      - function: "generateRandomUser"
+      
+      # Register
+      - post:
+          url: "/api/auth/signup"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          json:
+            username: "{{ username }}"
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+            - json: "$.user.id"
+              as: "userId"
+
+      - think: 1
+
+      # Create lobby
+      - post:
+          url: "/api/lobby/create"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            maxPlayers: 4
+          capture:
+            - json: "$.lobbyId"
+              as: "lobbyId"
+
+      - think: 1
+
+      # Select model
+      - function: "selectRandomModel"
+      
+      - post:
+          url: "/api/lobby/{{ lobbyId }}/select-model"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            model: "{{ model }}"
+
+      - think: 2
+
+      # Check current lobby
+      - get:
+          url: "/api/lobby/current"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+      - think: 1
+
+      # Leave lobby
+      - post:
+          url: "/api/lobby/{{ lobbyId }}/leave"
+          beforeRequest: "metricsByEndpoint_beforeRequest"
+          afterResponse: "metricsByEndpoint_afterResponse"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+  # Lobby Join/Leave Flow
+  - name: "Join and Leave Lobbies"
+    weight: 15
+    flow:
+      - function: "generateRandomUser"
+      
+      # Register first user (lobby creator)
+      - post:
+          url: "/api/auth/signup"
+          json:
+            username: "{{ username }}"
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+            - json: "$.user.id"
+              as: "userId"
+
+      - think: 1
+
+      # Create lobby
+      - post:
+          url: "/api/lobby/create"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            maxPlayers: 4
+          capture:
+            - json: "$.lobbyId"
+              as: "lobbyId"
+
+      - think: 1
+
+      # Get lobby list
+      - get:
+          url: "/api/lobby/list"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+      - think: 2
+
+      # Join the lobby (simulating another user would join)
+      - post:
+          url: "/api/lobby/{{ lobbyId }}/join"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+      - think: 1
+
+      # Get lobby details
+      - get:
+          url: "/api/lobby/{{ lobbyId }}"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+      - think: 2
+
+      # Leave lobby
+      - post:
+          url: "/api/lobby/{{ lobbyId }}/leave"
+          headers:
+            Authorization: "Bearer {{ authToken }}"

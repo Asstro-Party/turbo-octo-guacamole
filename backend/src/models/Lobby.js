@@ -103,7 +103,7 @@ export class Lobby {
    * @param {WebSocket} excludeWs - WebSocket to exclude from broadcast
    */
   broadcast(message, excludeWs = null) {
-    console.log(`[Lobby ${this.lobbyId}] Broadcasting ${message.type} to ${this.connections.size} connection(s)`);
+    // console.log(`[Lobby ${this.lobbyId}] Broadcasting ${message.type} to ${this.connections.size} connection(s)`);
 
     const data = JSON.stringify(message);
     let sentCount = 0;
@@ -115,7 +115,7 @@ export class Lobby {
       }
     });
 
-    console.log(`[Lobby ${this.lobbyId}] Sent ${message.type} to ${sentCount} client(s)`);
+    // console.log(`[Lobby ${this.lobbyId}] Sent ${message.type} to ${sentCount} client(s)`);
   }
 
   /**

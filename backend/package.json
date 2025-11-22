@@ -7,20 +7,37 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "db:migrate": "node src/scripts/migrate.js"
+    "db:migrate": "node src/scripts/migrate.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run test/unit",
+    "test:integration": "vitest run test/integration",
+    "test:coverage": "vitest run --coverage",
+    "test:load": "artillery run test/load/artillery.yml",
+    "test:load:lobby": "artillery run test/load/scenarios/lobby-flow.yml",
+    "test:load:game": "artillery run test/load/scenarios/game-flow.yml",
+    "test:load:ws": "artillery run test/load/scenarios/websocket-flow.yml",
+    "test:load:report": "artillery run test/load/artillery.yml --output report.json && artillery report report.json"
   },
   "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "ws": "^8.14.2",
+    "jsonwebtoken": "^9.0.2",
     "pg": "^8.11.3",
     "redis": "^4.6.10",
-    "bcrypt": "^5.1.1",
-    "jsonwebtoken": "^9.0.2",
-    "dotenv": "^16.3.1",
-    "cors": "^2.8.5",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "@jest/globals": "^30.2.0",
+    "@vitest/coverage-v8": "^1.6.1",
+    "artillery": "^2.0.27",
+    "artillery-plugin-expect": "^2.21.0",
+    "jest": "^30.2.0",
+    "nodemon": "^3.0.1",
+    "supertest": "^7.1.4",
+    "vitest": "^1.6.1",
+    "ws": "^8.18.3"
   }
 }
