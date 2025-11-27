@@ -53,6 +53,17 @@ If you haven't set up the project yet:
    docker-compose up -d
    ```
 
+4. **Running tests:**
+   ```bash
+   cd backend
+   # Unit tests
+   npm run test:unit
+   # Load tests
+   npm run test:load
+   # Load tests (with report)
+   npm run test:load:report
+   ```
+
 ## Tech Stack
 
 | Component | Technology |
