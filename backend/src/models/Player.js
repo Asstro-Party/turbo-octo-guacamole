@@ -150,10 +150,10 @@ export class Player {
    */
   static getSpawnPositions() {
     return [
-      { x: 180, y: 125 },   // Player 1: Top-Left
-      { x: 1160, y: 125 },  // Player 2: Top-Right
-      { x: 1160, y: 625 },  // Player 3: Bottom-Right
-      { x: 180, y: 625 }    // Player 4: Bottom-Left
+      { x: 140, y: 140 },   // Player 1: Top-Left box center
+      { x: 1140, y: 140 },  // Player 2: Top-Right box center
+      { x: 1140, y: 580 },  // Player 3: Bottom-Right box center
+      { x: 140, y: 580 }    // Player 4: Bottom-Left box center
     ];
   }
 }

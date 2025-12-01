@@ -34,32 +34,54 @@ export class Game {
   initializeWalls() {
     return [
       // TOP-LEFT CORNER (2x2 square)
-      { id: 0, position: { x: 50, y: 40 }, health: 100, isHorizontal: true },
-      { id: 1, position: { x: 150, y: 40 }, health: 100, isHorizontal: true },
-      { id: 2, position: { x: 220, y: 80 }, health: 100, isHorizontal: false },
-      { id: 3, position: { x: 220, y: 180 }, health: 100, isHorizontal: false },
-      { id: 4, position: { x: 50, y: 240 }, health: 100, isHorizontal: true },
-      { id: 5, position: { x: 150, y: 240 }, health: 100, isHorizontal: true },
-      { id: 6, position: { x: 1160, y: 40 }, health: 100, isHorizontal: false },
-      { id: 7, position: { x: 1200, y: 125 }, health: 100, isHorizontal: false },
+      { id: 0, position: { x: 90, y: 40 }, health: 100, isHorizontal: true },
+      { id: 1, position: { x: 190, y: 40 }, health: 100, isHorizontal: true },
+      { id: 2, position: { x: 260, y: 80 }, health: 100, isHorizontal: false },
+      { id: 3, position: { x: 260, y: 180 }, health: 100, isHorizontal: false },
+      { id: 4, position: { x: 90, y: 240 }, health: 100, isHorizontal: true },
+      { id: 5, position: { x: 190, y: 240 }, health: 100, isHorizontal: true },
+      { id: 6, position: { x: 20, y: 80 }, health: 100, isHorizontal: false },
+      { id: 7, position: { x: 20, y: 180 }, health: 100, isHorizontal: false },
 
-      // BOTTOM-LEFT CORNER (2x2 square)
-      { id: 8, position: { x: 180, y: 650 }, health: 100, isHorizontal: false },
-      { id: 9, position: { x: 140, y: 625 }, health: 100, isHorizontal: false },
-      { id: 10, position: { x: 180, y: 600 }, health: 100, isHorizontal: false },
-      { id: 11, position: { x: 220, y: 625 }, health: 100, isHorizontal: false },
+      // TOP-RIGHT CORNER (mirrored from top-left, x = 1280 - x)
+      { id: 8, position: { x: 1190, y: 40 }, health: 100, isHorizontal: true },   
+      { id: 9, position: { x: 1090, y: 40 }, health: 100, isHorizontal: true },   
+      { id: 10, position: { x: 1020, y: 80 }, health: 100, isHorizontal: false }, 
+      { id: 11, position: { x: 1020, y: 180 }, health: 100, isHorizontal: false },
+      { id: 12, position: { x: 1190, y: 240 }, health: 100, isHorizontal: true }, 
+      { id: 13, position: { x: 1090, y: 240 }, health: 100, isHorizontal: true }, 
+      { id: 14, position: { x: 1260, y: 80 }, health: 100, isHorizontal: false }, 
+      { id: 15, position: { x: 1260, y: 180 }, health: 100, isHorizontal: false },
 
-      // BOTTOM-RIGHT CORNER (2x2 square)
-      { id: 12, position: { x: 1160, y: 550 }, health: 100, isHorizontal: false },
-      { id: 13, position: { x: 1140, y: 550 }, health: 100, isHorizontal: false },
-      { id: 14, position: { x: 1160, y: 700 }, health: 100, isHorizontal: false },
-      { id: 15, position: { x: 1140, y: 700 }, health: 100, isHorizontal: false },
+      // BOTTOM-LEFT CORNER (mirrored from top-left, y = 720 - y)
+      { id: 16, position: { x: 90, y: 680 }, health: 100, isHorizontal: true },   
+      { id: 17, position: { x: 190, y: 680 }, health: 100, isHorizontal: true },  
+      { id: 18, position: { x: 260, y: 640 }, health: 100, isHorizontal: false },
+      { id: 19, position: { x: 260, y: 540 }, health: 100, isHorizontal: false }, 
+      { id: 20, position: { x: 90, y: 480 }, health: 100, isHorizontal: true },   
+      { id: 21, position: { x: 190, y: 480 }, health: 100, isHorizontal: true },  
+      { id: 22, position: { x: 20, y: 640 }, health: 100, isHorizontal: false },
+      { id: 23, position: { x: 20, y: 540 }, health: 100, isHorizontal: false }, 
 
-      // CENTER (2x2 square)
-      { id: 16, position: { x: 520, y: 280 }, health: 100, isHorizontal: false },
-      { id: 17, position: { x: 720, y: 280 }, health: 100, isHorizontal: false },
-      { id: 18, position: { x: 520, y: 420 }, health: 100, isHorizontal: false },
-      { id: 19, position: { x: 720, y: 420 }, health: 100, isHorizontal: false },
+      // BOTTOM-RIGHT CORNER (mirrored from top-left, x = 1280 - x, y = 720 - y)
+      { id: 24, position: { x: 1190, y: 680 }, health: 100, isHorizontal: true },
+      { id: 25, position: { x: 1090, y: 680 }, health: 100, isHorizontal: true },
+      { id: 26, position: { x: 1020, y: 640 }, health: 100, isHorizontal: false },
+      { id: 27, position: { x: 1020, y: 540 }, health: 100, isHorizontal: false },
+      { id: 28, position: { x: 1190, y: 480 }, health: 100, isHorizontal: true }, 
+      { id: 29, position: { x: 1090, y: 480 }, health: 100, isHorizontal: true }, 
+      { id: 30, position: { x: 1260, y: 640 }, health: 100, isHorizontal: false },
+      { id: 31, position: { x: 1260, y: 540 }, health: 100, isHorizontal: false },
+
+      // CENTER (2x2 square box like the corners)
+      { id: 32, position: { x: 590, y: 310 }, health: 100, isHorizontal: true },   
+      { id: 33, position: { x: 690, y: 310 }, health: 100, isHorizontal: true },   
+      { id: 34, position: { x: 760, y: 350 }, health: 100, isHorizontal: false },  
+      { id: 35, position: { x: 760, y: 450 }, health: 100, isHorizontal: false },  
+      { id: 36, position: { x: 590, y: 510 }, health: 100, isHorizontal: true },   
+      { id: 37, position: { x: 690, y: 510 }, health: 100, isHorizontal: true },   
+      { id: 38, position: { x: 520, y: 350 }, health: 100, isHorizontal: false },  
+      { id: 39, position: { x: 520, y: 450 }, health: 100, isHorizontal: false },  
     ];
   }
 
@@ -187,7 +209,12 @@ export class Game {
 
         const collision = this.checkCircleRectCollision(
           { x: newX, y: newY, radius: this.PLAYER_RADIUS },
-          { x: wall.position.x, y: wall.position.y, width: this.WALL_WIDTH, height: this.WALL_HEIGHT }
+          { 
+            x: wall.position.x, 
+            y: wall.position.y, 
+            width: wall.isHorizontal ? this.WALL_HEIGHT : this.WALL_WIDTH,   
+            height: wall.isHorizontal ? this.WALL_WIDTH : this.WALL_HEIGHT   
+          }
         );
 
         if (collision) {
@@ -251,7 +278,12 @@ export class Game {
 
         const collision = this.checkCircleRectCollision(
           { x: bullet.position.x, y: bullet.position.y, radius: this.BULLET_RADIUS },
-          { x: wall.position.x, y: wall.position.y, width: this.WALL_WIDTH, height: this.WALL_HEIGHT }
+          { 
+            x: wall.position.x, 
+            y: wall.position.y, 
+            width: wall.isHorizontal ? this.WALL_HEIGHT : this.WALL_WIDTH, 
+            height: wall.isHorizontal ? this.WALL_WIDTH : this.WALL_HEIGHT 
+          }
         );
 
         if (collision) {
@@ -387,7 +419,12 @@ export class Game {
 
         const collision = this.checkCircleRectCollision(
           { x, y, radius: this.PLAYER_RADIUS },
-          { x: wall.position.x, y: wall.position.y, width: this.WALL_WIDTH, height: this.WALL_HEIGHT }
+          { 
+            x: wall.position.x, 
+            y: wall.position.y, 
+            width: wall.isHorizontal ? this.WALL_HEIGHT : this.WALL_WIDTH, 
+            height: wall.isHorizontal ? this.WALL_WIDTH : this.WALL_HEIGHT 
+          }
         );
 
         if (collision) {
