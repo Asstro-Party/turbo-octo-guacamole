@@ -12,15 +12,15 @@ var is_horizontal = true  # true for horizontal, false for vertical
 func _ready():
 	start_position = position
 
-#func _physics_process(delta):
-#	if is_horizontal:
-#		position.x += move_speed * direction * delta
-#		if abs(position.x - start_position.x) > move_range:
-#			direction *= -1
-#	else:
-#		position.y += move_speed * direction * delta
-#		if abs(position.y - start_position.y) > move_range:
-#			direction *= -1
+func update_collision_shape():
+	var collision_shape = get_node("CollisionShape2D")
+	if collision_shape and collision_shape.shape:
+		if is_horizontal:
+			# For horizontal doors, swap width and height
+			collision_shape.shape.size = Vector2(100, 40)
+		else:
+			# For vertical doors, keep original
+			collision_shape.shape.size = Vector2(40, 100)
 
 func take_damage(amount: int, attacker_id: int):
 	health -= amount

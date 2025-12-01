@@ -10,8 +10,6 @@ export class Game {
     this.players = new Map(); // userId -> Player instance
     this.bullets = [];
     this.walls = this.initializeWalls();
-    this.portals = [];
-    this.lastPortalSpawn = Date.now();
     this.playerInputs = {}; // userId -> latest input
     this.sessionId = null;
     this.gameOver = false; // Track if game has ended
@@ -26,8 +24,6 @@ export class Game {
     this.BULLET_SPEED = 600;
     this.BULLET_DAMAGE = 50;
     this.HIT_RADIUS = 20;
-    this.PORTAL_SPAWN_INTERVAL = 20000; // 20 seconds
-    this.PORTAL_LIFETIME = 15000; // 15 seconds
     this.KILLS_TO_WIN = 5;
   }
 
@@ -227,9 +223,6 @@ export class Game {
     
     stateChanged = collisionResult || stateChanged;
 
-    // Handle portal spawning
-    stateChanged = this.updatePortals(broadcastCallback) || stateChanged;
-
     return stateChanged;
   }
 
@@ -372,71 +365,6 @@ export class Game {
     return stateChanged;
   }
 
-  /**
-   * Update portal spawning
-   * @param {Function} broadcastCallback - Callback to broadcast events
-   * @returns {boolean} True if state changed
-   */
-  updatePortals(broadcastCallback) {
-    const now = Date.now();
-
-    if (this.portals.length === 0 && now - this.lastPortalSpawn > this.PORTAL_SPAWN_INTERVAL) {
-      this.spawnPortals(broadcastCallback);
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Spawn portals
-   * @param {Function} broadcastCallback - Callback to broadcast events
-   */
-  spawnPortals(broadcastCallback) {
-    const portalSpawnLocations = [
-      { x: 150, y: 100 },
-      { x: 1130, y: 100 },
-      { x: 100, y: 360 },
-      { x: 1180, y: 360 },
-      { x: 150, y: 620 },
-      { x: 1130, y: 620 },
-      { x: 640, y: 100 },
-      { x: 640, y: 620 }
-    ];
-
-    const shuffled = [...portalSpawnLocations].sort(() => Math.random() - 0.5);
-    const portal1 = { id: 0, position: shuffled[0] };
-    const portal2 = { id: 1, position: shuffled[1] };
-
-    this.portals = [portal1, portal2];
-    this.lastPortalSpawn = Date.now();
-
-    console.log(`[Game ${this.gameId}] Spawned portals at:`, portal1.position, portal2.position);
-
-    broadcastCallback({
-      type: 'portals_spawned',
-      portals: this.portals
-    });
-
-    // Schedule portal removal
-    setTimeout(() => {
-      this.portals = [];
-      console.log(`[Game ${this.gameId}] Removed portals`);
-      broadcastCallback({ type: 'portals_removed' });
-    }, this.PORTAL_LIFETIME);
-  }
-
-  /**
-   * Teleport a player
-   * @param {number} userId - User ID
-   * @param {Object} position - Target position {x, y}
-   */
-  teleportPlayer(userId, position) {
-    const player = this.players.get(userId);
-    if (player) {
-      player.teleport(position.x, position.y);
-    }
-  }
 
   /**
    * Find a random safe position for respawning
@@ -514,7 +442,6 @@ export class Game {
       players: playersState,
       bullets: this.bullets,
       walls: this.walls,
-      portals: this.portals
     };
   }
 
