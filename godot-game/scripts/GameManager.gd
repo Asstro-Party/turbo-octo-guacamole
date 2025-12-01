@@ -3,7 +3,6 @@ extends Node
 # Manages the game state and players
 @export var player_scene: PackedScene
 @export var moving_wall_scene: PackedScene
-@export var portal_scene: PackedScene
 
 var players = {}
 var bullets = {}
@@ -11,10 +10,6 @@ var local_player_id = 0
 var session_id = 0
 var player_models = {}
 var moving_walls = []
-var active_portals = []
-var portal_spawn_timer = 0.0
-var portal_lifetime = 15.0  # How long portals last
-var portal_spawn_interval = 20.0  # How often new portals spawn
 
 @onready var network_manager = $NetworkManager
 @onready var players_container = $Players
@@ -43,8 +38,6 @@ func _ready():
 	network_manager.player_model_selected.connect(_on_player_model_selected)
 	network_manager.player_left_lobby.connect(_on_player_left_lobby)
 	network_manager.walls_received.connect(_on_walls_received)           
-	network_manager.portals_received.connect(_on_portals_received)       
-	network_manager.portals_removed.connect(_on_portals_removed)  
 	network_manager.wall_destroyed.connect(_on_wall_destroyed)
 
 	# Connect return button
@@ -410,50 +403,6 @@ func spawn_moving_walls():
 		players_container.add_child(wall)
 		moving_walls.append(wall)
 
-func spawn_portal_pair():
-	if not portal_scene:
-		print("Error: portal_scene not set")
-		return
-	
-	var viewport_size = get_viewport().get_visible_rect().size
-	
-	# Spawn first portal
-	var portal1 = portal_scene.instantiate()
-	portal1.position = Vector2(
-		randf_range(150, viewport_size.x - 150),
-		randf_range(150, viewport_size.y - 150)
-	)
-	players_container.add_child(portal1)
-	
-	# Spawn second portal (far from first)
-	var portal2 = portal_scene.instantiate()
-	var min_distance = 400
-	var attempts = 0
-	while attempts < 10:
-		portal2.position = Vector2(
-			randf_range(150, viewport_size.x - 150),
-			randf_range(150, viewport_size.y - 150)
-		)
-		if portal1.position.distance_to(portal2.position) > min_distance:
-			break
-		attempts += 1
-	
-	players_container.add_child(portal2)
-	
-	# Link them
-	portal1.link_to(portal2)
-	
-	active_portals = [portal1, portal2]
-	
-	# Destroy after lifetime
-	await get_tree().create_timer(portal_lifetime).timeout
-	destroy_portals()
-
-func destroy_portals():
-	for portal in active_portals:
-		if is_instance_valid(portal):
-			portal.queue_free()
-	active_portals.clear()
 
 func clear_walls():
 	for wall in moving_walls:
@@ -465,14 +414,6 @@ func clear_walls():
 func _on_walls_received(walls_data: Array):
 	print("[GameManager] Received walls from server:", walls_data)
 	sync_walls_from_server(walls_data)
-
-func _on_portals_received(portals_data: Array):
-	print("[GameManager] Received portals from server:", portals_data)
-	spawn_portals_from_server(portals_data)
-
-func _on_portals_removed():
-	print("[GameManager] Server removed portals")
-	destroy_portals()
 
 func sync_walls_from_server(walls_data: Array):
 	clear_walls()
@@ -486,38 +427,20 @@ func sync_walls_from_server(walls_data: Array):
 		wall.position = Vector2(wall_data.position.x, wall_data.position.y)
 		wall.is_horizontal = wall_data.isHorizontal
 		wall.health = wall_data.health
-		wall.id = wall_data.id  
-		if wall_data.isHorizontal:
-			wall.rotation_degrees = 90
+		wall.id = wall_data.id
+		
+		# Add to scene first so the wall's _ready() can run and update collision shape
 		players_container.add_child(wall)
+		
+		# Rotate only the sprite for horizontal walls, not the whole body
+		if wall_data.isHorizontal:
+			var sprite = wall.get_node("Sprite2D")
+			if sprite:
+				sprite.rotation_degrees = 90
+		
 		moving_walls.append(wall)
 	
 	print("[GameManager] Spawned", moving_walls.size(), "walls from server")
-
-func spawn_portals_from_server(portals_data: Array):
-	# Clear existing portals
-	destroy_portals()
-	
-	if portals_data.size() < 2:
-		print("[GameManager] Not enough portal data:", portals_data.size())
-		return
-	
-	if not portal_scene:
-		print("Error: portal_scene not set")
-		return
-	
-	var portal1 = portal_scene.instantiate()
-	portal1.position = Vector2(portals_data[0]["position"]["x"], portals_data[0]["position"]["y"])
-	players_container.add_child(portal1)
-	
-	var portal2 = portal_scene.instantiate()
-	portal2.position = Vector2(portals_data[1]["position"]["x"], portals_data[1]["position"]["y"])
-	players_container.add_child(portal2)
-	
-	portal1.link_to(portal2)
-	active_portals = [portal1, portal2]
-	
-	print("[GameManager] Spawned portal pair from server at:", portal1.position, portal2.position)
 
 func _on_wall_destroyed(wall_id: int):
 	print("[GameManager] Removing destroyed wall:", wall_id)

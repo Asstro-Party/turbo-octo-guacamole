@@ -274,7 +274,6 @@ async function handleJoinGame(ws, message, wss) {
     userId,
     players: playerList,
     walls: game.walls,
-    portals: game.portals
   }));
 
   // Broadcast to all players in lobby
