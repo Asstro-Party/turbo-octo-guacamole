@@ -76,6 +76,12 @@ func _handle_local_input(delta):
 func _input(event):
 	if not is_local_player or _game_over:
 		return
+	
+	# Handle powerup usage with E key
+	if event is InputEventKey and event.pressed and event.keycode == KEY_E and not event.echo:
+		_use_powerup()
+		return
+	
 	# Handle shooting for spacebar or mouse
 	if (event is InputEventKey and event.pressed and event.keycode == KEY_SPACE and not event.echo) or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
 		shoot()
@@ -175,3 +181,17 @@ func teleport(new_position: Vector2):
 func set_game_over(value: bool):
 	_game_over = value
 	print("[Player ", player_id, "] Game over flag set to: ", value)
+
+func _use_powerup():
+	if not network_manager:
+		return
+	
+	print("[Player ", player_id, "] Using powerup")
+	network_manager.send_message({
+		"type": "use_powerup",
+		"userId": player_id,
+		"data": {
+			"rotation": rotation,
+			"position": {"x": position.x, "y": position.y}
+		}
+	})

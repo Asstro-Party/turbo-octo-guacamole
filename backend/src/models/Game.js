@@ -1,4 +1,5 @@
 import { Player } from './Player.js';
+import { Powerup, PowerupTypes } from './Powerup.js';
 
 /**
  * Game class - Represents a single game instance with 0-4 players
@@ -13,6 +14,15 @@ export class Game {
     this.playerInputs = {}; // userId -> latest input
     this.sessionId = null;
     this.gameOver = false; // Track if game has ended
+    
+    // Powerup system
+    this.powerups = [];              // Active powerups on map
+    this.mines = [];                 // Placed diaper mines
+    this.gameStartTime = Date.now(); // Track when game started
+    this.lastPowerupPickup = 0;      // Track when last powerup was picked up
+    this.firstPowerupSpawned = false; // Track if first powerup has been spawned
+    this.FIRST_POWERUP_DELAY = 10000;     // 10 seconds after game start
+    this.POWERUP_PICKUP_DELAY = 5000;     // 5 seconds after pickup before next spawn
 
     // Game configuration
     this.GAME_WIDTH = 1280;
@@ -25,6 +35,15 @@ export class Game {
     this.BULLET_DAMAGE = 50;
     this.HIT_RADIUS = 20;
     this.KILLS_TO_WIN = 5;
+    
+    // Powerup spawn locations
+    this.CENTER_SPAWN = { x: 640, y: 360 };  // Center of map (inside box)
+    this.POWERUP_SPAWN_LOCATIONS = [
+      { x: 640, y: 100 },   // Top center
+      { x: 640, y: 620 },   // Bottom center
+      { x: 100, y: 360 },   // Left center
+      { x: 1180, y: 360 },  // Right center
+    ];
   }
 
   /**
@@ -234,6 +253,11 @@ export class Game {
       if (player.hasStateChanged(oldX, oldY, oldRot)) {
         stateChanged = true;
       }
+      
+      // Check if player's powerup has expired
+      if (player.checkPowerupExpiration()) {
+        stateChanged = true;
+      }
     }
 
     // Update bullets
@@ -249,6 +273,12 @@ export class Game {
     }
     
     stateChanged = collisionResult || stateChanged;
+
+    // Check mine triggers
+    this.checkMineTriggers(broadcastCallback);
+    
+    // Handle powerup spawning
+    stateChanged = this.updatePowerups(broadcastCallback) || stateChanged;
 
     return stateChanged;
   }
@@ -475,10 +505,21 @@ export class Game {
       playersState[userId] = player.getState();
     }
 
+    // Serialize mines without timeout properties
+    const serializedMines = this.mines.map(mine => ({
+      id: mine.id,
+      ownerId: mine.ownerId,
+      position: mine.position,
+      armed: mine.armed,
+      placedAt: mine.placedAt
+    }));
+
     return {
       players: playersState,
       bullets: this.bullets,
       walls: this.walls,
+      powerups: this.powerups.map(p => p.getState()),
+      mines: serializedMines
     };
   }
 
@@ -504,5 +545,409 @@ export class Game {
    */
   isEmpty() {
     return this.players.size === 0;
+  }
+
+  /**
+   * Update powerup spawning
+   * @param {Function} broadcastCallback
+   * @returns {boolean}
+   */
+  updatePowerups(broadcastCallback) {
+    const now = Date.now();
+    
+    // Only spawn if no powerups exist
+    if (this.powerups.length > 0) {
+      return false;
+    }
+    
+    // First powerup: spawn 10 seconds after game start
+    if (!this.firstPowerupSpawned) {
+      const timeSinceGameStart = now - this.gameStartTime;
+      if (timeSinceGameStart > this.FIRST_POWERUP_DELAY) {
+        this.spawnRandomPowerup(broadcastCallback, true);
+        return true;
+      }
+      return false;
+    }
+    
+    // Subsequent powerups: wait 5 seconds after last pickup
+    const timeSincePickup = now - this.lastPowerupPickup;
+    if (timeSincePickup > this.POWERUP_PICKUP_DELAY) {
+      this.spawnRandomPowerup(broadcastCallback, false);
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Spawn a random powerup
+   * @param {Function} broadcastCallback
+   * @param {boolean} isFirst - Is this the first powerup?
+   */
+  spawnRandomPowerup(broadcastCallback, isFirst = false) {
+    const types = Object.keys(PowerupTypes);
+    const randomType = types[Math.floor(Math.random() * types.length)];
+    
+    // First powerup always spawns in center, others spawn randomly
+    const spawnLocation = isFirst 
+      ? this.CENTER_SPAWN
+      : this.POWERUP_SPAWN_LOCATIONS[Math.floor(Math.random() * this.POWERUP_SPAWN_LOCATIONS.length)];
+    
+    const powerup = new Powerup(randomType, spawnLocation);
+    this.powerups.push(powerup);
+    
+    if (isFirst) {
+      this.firstPowerupSpawned = true;
+      console.log(`[Game ${this.gameId}] Spawned FIRST powerup (${randomType}) at CENTER (${spawnLocation.x}, ${spawnLocation.y})`);
+    } else {
+      console.log(`[Game ${this.gameId}] Spawned ${randomType} at (${spawnLocation.x}, ${spawnLocation.y})`);
+    }
+    
+    broadcastCallback({
+      type: 'powerup_spawned',
+      powerup: powerup.getState()
+    });
+  }
+
+  /**
+   * Handle powerup pickup
+   * @param {number} userId
+   * @param {string} powerupId
+   */
+  handlePowerupPickup(userId, powerupId) {
+    const player = this.players.get(userId);
+    if (!player) return false;
+    
+    // Check if player already has a powerup
+    if (player.powerup) {
+      console.log(`[Game ${this.gameId}] Player ${userId} already has a powerup: ${player.powerup}`);
+      return false;
+    }
+    
+    const powerupIndex = this.powerups.findIndex(p => p.id === powerupId);
+    if (powerupIndex === -1) return false;
+    
+    const powerup = this.powerups[powerupIndex];
+    if (powerup.collected) return false;
+    
+    // Check if player is close enough
+    const dx = player.position.x - powerup.position.x;
+    const dy = player.position.y - powerup.position.y;
+    const distSq = dx * dx + dy * dy;
+    
+    if (distSq > 50 * 50) return false; // Must be within 50 units
+    
+    // Give powerup to player
+    player.pickupPowerup(powerup.type);
+    this.powerups.splice(powerupIndex, 1);
+    
+    // Track pickup time for spawn delay
+    this.lastPowerupPickup = Date.now();
+    
+    console.log(`[Game ${this.gameId}] Player ${userId} picked up ${powerup.type}`);
+    
+    return true;
+  }
+
+  /**
+   * Handle powerup usage
+   * @param {number} userId
+   * @param {Object} usageData - {rotation, position}
+   * @param {Function} broadcastCallback
+   */
+  handlePowerupUse(userId, usageData, broadcastCallback) {
+    const player = this.players.get(userId);
+    if (!player || !player.powerup) return;
+    
+    const powerupType = player.powerup;
+    
+    if (!player.usePowerup()) return;
+    
+    switch (powerupType) {
+      case 'DIARRHEA_LASER':
+        this.handleDiarrheaLaser(userId, usageData, broadcastCallback);
+        break;
+      case 'PLUNGER_MELEE':
+        this.handlePlungerMelee(userId, usageData, broadcastCallback);
+        break;
+      case 'DIAPER_MINES':
+        this.handleDiaperMine(userId, usageData, broadcastCallback);
+        break;
+    }
+  }
+
+  /**
+   * Handle diarrhea laser
+   */
+  handleDiarrheaLaser(userId, usageData, broadcastCallback) {
+    const player = this.players.get(userId);
+    const config = PowerupTypes.DIARRHEA_LASER;
+    
+    broadcastCallback({
+      type: 'laser_activated',
+      userId,
+      position: player.position,
+      rotation: usageData.rotation,
+      duration: config.duration
+    });
+    
+    // Start laser damage ticks
+    const laserInterval = setInterval(() => {
+      this.applyLaserDamage(userId, usageData.rotation, broadcastCallback);
+    }, config.tickRate);
+    
+    setTimeout(() => {
+      clearInterval(laserInterval);
+      broadcastCallback({
+        type: 'laser_deactivated',
+        userId
+      });
+    }, config.duration);
+  }
+
+  /**
+   * Apply laser damage to players in laser path
+   */
+  applyLaserDamage(userId, rotation, broadcastCallback) {
+    const shooter = this.players.get(userId);
+    if (!shooter) return;
+    
+    const config = PowerupTypes.DIARRHEA_LASER;
+    const laserEnd = {
+      x: shooter.position.x + Math.cos(rotation) * config.range,
+      y: shooter.position.y + Math.sin(rotation) * config.range
+    };
+    
+    // Check each player for laser hit
+    for (const [targetId, target] of this.players) {
+      if (targetId === userId) continue;
+      
+      // Check if player intersects with laser line
+      const dist = this.pointToLineDistance(
+        target.position,
+        shooter.position,
+        laserEnd
+      );
+      
+      if (dist < this.PLAYER_RADIUS) {
+        const died = target.takeDamage(config.damage);
+        
+        if (died) {
+          shooter.addKill();
+          target.deaths++;
+          
+          broadcastCallback({
+            type: 'kill',
+            killerId: userId,
+            victimId: targetId,
+            timestamp: Date.now()
+          });
+          
+          // Respawn victim
+          const randomPos = this.findRandomSafePosition(targetId);
+          target.respawn(randomPos);
+          
+          // Check win condition
+          if (shooter.kills >= this.KILLS_TO_WIN) {
+            return { gameOver: true, winnerId: userId };
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Handle plunger melee
+   */
+  handlePlungerMelee(userId, usageData, broadcastCallback) {
+    const player = this.players.get(userId);
+    const config = PowerupTypes.PLUNGER_MELEE;
+    
+    // Check for players in melee range
+    for (const [targetId, target] of this.players) {
+      if (targetId === userId) continue;
+      
+      const dx = target.position.x - player.position.x;
+      const dy = target.position.y - player.position.y;
+      const distSq = dx * dx + dy * dy;
+      
+      if (distSq <= config.range * config.range) {
+        const died = target.takeDamage(config.damage);
+        
+        // Apply knockback
+        const angle = Math.atan2(dy, dx);
+        target.position.x += Math.cos(angle) * config.knockback * 0.016; // dt estimate
+        target.position.y += Math.sin(angle) * config.knockback * 0.016;
+        
+        if (died) {
+          player.addKill();
+          target.deaths++;
+          
+          broadcastCallback({
+            type: 'kill',
+            killerId: userId,
+            victimId: targetId,
+            timestamp: Date.now()
+          });
+          
+          const randomPos = this.findRandomSafePosition(targetId);
+          target.respawn(randomPos);
+        }
+      }
+    }
+    
+    broadcastCallback({
+      type: 'plunger_used',
+      userId,
+      position: player.position,
+      rotation: usageData.rotation
+    });
+  }
+
+  /**
+   * Handle diaper mine placement
+   */
+  handleDiaperMine(userId, usageData, broadcastCallback) {
+    const player = this.players.get(userId);
+    const config = PowerupTypes.DIAPER_MINES;
+    
+    const mine = {
+      id: Date.now().toString() + Math.random(),
+      ownerId: userId,
+      position: { ...player.position },
+      armed: false,
+      placedAt: Date.now(),
+      armTimeout: null,
+      expireTimeout: null
+    };
+    
+    // Arm after delay
+    mine.armTimeout = setTimeout(() => {
+      // Check if mine still exists
+      const stillExists = this.mines.some(m => m.id === mine.id);
+      if (!stillExists) return;
+      
+      mine.armed = true;
+      broadcastCallback({
+        type: 'mine_armed',
+        mineId: mine.id
+      });
+    }, config.armTime);
+    
+    // Remove after lifetime
+    mine.expireTimeout = setTimeout(() => {
+      const index = this.mines.findIndex(m => m.id === mine.id);
+      if (index !== -1) {
+        const mineToRemove = this.mines[index];
+        // Clear any pending timeouts
+        if (mineToRemove.armTimeout) clearTimeout(mineToRemove.armTimeout);
+        if (mineToRemove.expireTimeout) clearTimeout(mineToRemove.expireTimeout);
+        
+        this.mines.splice(index, 1);
+        broadcastCallback({
+          type: 'mine_expired',
+          mineId: mine.id
+        });
+      }
+    }, config.lifetime);
+    
+    this.mines.push(mine);
+    
+    // Send mine data without timeout properties (can't serialize)
+    broadcastCallback({
+      type: 'mine_placed',
+      mine: {
+        id: mine.id,
+        ownerId: mine.ownerId,
+        position: mine.position,
+        armed: mine.armed,
+        placedAt: mine.placedAt
+      }
+    });
+  }
+
+  /**
+   * Check mine triggers (call this in update loop)
+   */
+  checkMineTriggers(broadcastCallback) {
+    const config = PowerupTypes.DIAPER_MINES;
+    
+    for (let i = this.mines.length - 1; i >= 0; i--) {
+      const mine = this.mines[i];
+      if (!mine.armed) continue;
+      
+      for (const [targetId, target] of this.players) {
+        const dx = target.position.x - mine.position.x;
+        const dy = target.position.y - mine.position.y;
+        const distSq = dx * dx + dy * dy;
+        
+        if (distSq <= config.triggerRadius * config.triggerRadius) {
+          // Mine triggered!
+          const died = target.takeDamage(config.damage);
+          
+          if (died) {
+            const owner = this.players.get(mine.ownerId);
+            if (owner) owner.addKill();
+            target.deaths++;
+            
+            broadcastCallback({
+              type: 'kill',
+              killerId: mine.ownerId,
+              victimId: targetId,
+              timestamp: Date.now()
+            });
+            
+            const randomPos = this.findRandomSafePosition(targetId);
+            target.respawn(randomPos);
+          }
+          
+          broadcastCallback({
+            type: 'mine_triggered',
+            mineId: mine.id,
+            position: mine.position,
+            victimId: targetId
+          });
+          
+          // Clear any pending timeouts before removing
+          if (mine.armTimeout) clearTimeout(mine.armTimeout);
+          if (mine.expireTimeout) clearTimeout(mine.expireTimeout);
+          
+          this.mines.splice(i, 1);
+          break;
+        }
+      }
+    }
+  }
+
+  /**
+   * Point to line distance helper
+   */
+  pointToLineDistance(point, lineStart, lineEnd) {
+    const A = point.x - lineStart.x;
+    const B = point.y - lineStart.y;
+    const C = lineEnd.x - lineStart.x;
+    const D = lineEnd.y - lineStart.y;
+    
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    const param = lenSq !== 0 ? dot / lenSq : -1;
+    
+    let xx, yy;
+    
+    if (param < 0) {
+      xx = lineStart.x;
+      yy = lineStart.y;
+    } else if (param > 1) {
+      xx = lineEnd.x;
+      yy = lineEnd.y;
+    } else {
+      xx = lineStart.x + param * C;
+      yy = lineStart.y + param * D;
+    }
+    
+    const dx = point.x - xx;
+    const dy = point.y - yy;
+    return Math.sqrt(dx * dx + dy * dy);
   }
 }
