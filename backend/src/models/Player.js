@@ -1,3 +1,5 @@
+import { PowerupTypes } from './Powerup.js';
+
 /**
  * Player class - Represents a player in the game
  */
@@ -15,6 +17,12 @@ export class Player {
     this.kills = 0;
     this.deaths = 0;
     this.spawnIndex = spawnIndex;
+    
+    // Powerup properties
+    this.powerup = null;           // Current powerup
+    this.powerupCharges = 0;       // For multi-use powerups like mines
+    this.powerupLastUsed = 0;      // Cooldown tracking
+    this.powerupExpires = 0;       // When powerup expires
   }
 
   /**
@@ -140,7 +148,81 @@ export class Player {
       speed: this.speed,
       kills: this.kills,
       deaths: this.deaths,
-      username: this.username
+      username: this.username,
+      powerup: this.getPowerupState()
+    };
+  }
+
+  /**
+   * Pick up a powerup
+   * @param {string} powerupType - Type of powerup
+   */
+  pickupPowerup(powerupType) {
+    this.powerup = powerupType;
+    const config = PowerupTypes[powerupType];
+    
+    if (config) {
+      this.powerupCharges = config.charges || 1;
+      this.powerupExpires = config.duration ? Date.now() + config.duration : 0;
+    }
+  }
+
+  /**
+   * Use the current powerup
+   * @returns {boolean} True if powerup was used
+   */
+  usePowerup() {
+    if (!this.powerup) return false;
+    
+    const config = PowerupTypes[this.powerup];
+    if (!config) return false;
+    
+    // Check cooldown
+    const now = Date.now();
+    if (now - this.powerupLastUsed < config.cooldown) {
+      return false;
+    }
+    
+    // Check expiration
+    if (this.powerupExpires > 0 && now > this.powerupExpires) {
+      this.clearPowerup();
+      return false;
+    }
+    
+    this.powerupLastUsed = now;
+    
+    // Reduce charges
+    if (config.charges) {
+      this.powerupCharges--;
+      if (this.powerupCharges <= 0) {
+        this.clearPowerup();
+      }
+    } else {
+      // Single-use powerup
+      this.clearPowerup();
+    }
+    
+    return true;
+  }
+
+  /**
+   * Clear current powerup
+   */
+  clearPowerup() {
+    this.powerup = null;
+    this.powerupCharges = 0;
+    this.powerupExpires = 0;
+  }
+
+  /**
+   * Get powerup state
+   */
+  getPowerupState() {
+    return {
+      type: this.powerup,
+      charges: this.powerupCharges,
+      expires: this.powerupExpires,
+      cooldownReady: Date.now() - this.powerupLastUsed
     };
   }
 

@@ -10,12 +10,14 @@ var local_player_id = 0
 var session_id = 0
 var player_models = {}
 var moving_walls = []
+var powerup_manager = null
 
 @onready var network_manager = $NetworkManager
 @onready var players_container = $Players
 @onready var health_bar = get_node_or_null("/root/Main/CanvasLayer/Control/HealthBar")
 @onready var kills_label = get_node_or_null("/root/Main/CanvasLayer/Control/KillsLabel")
 @onready var deaths_label = get_node_or_null("/root/Main/CanvasLayer/Control/DeathsLabel")
+@onready var powerup_label = get_node_or_null("/root/Main/CanvasLayer/Control/PowerupLabel")
 @onready var game_over_screen = get_node_or_null("/root/Main/CanvasLayer/Control/GameOverScreen")
 @onready var winner_label = get_node_or_null("/root/Main/CanvasLayer/Control/GameOverScreen/Panel/VBoxContainer/WinnerLabel")
 @onready var scores_list = get_node_or_null("/root/Main/CanvasLayer/Control/GameOverScreen/Panel/VBoxContainer/ScoresList")
@@ -27,6 +29,13 @@ var current_lobby_id = ""
 var game_over = false  # Track if game has ended
 
 func _ready():
+	# Create PowerupManager
+	var PowerupManagerScript = load("res://scripts/PowerupManager.gd")
+	powerup_manager = Node.new()
+	powerup_manager.set_script(PowerupManagerScript)
+	powerup_manager.name = "PowerupManager"
+	add_child(powerup_manager)
+	
 	# Connect to network manager signals
 	network_manager.player_joined.connect(_on_player_joined)
 	network_manager.game_started.connect(_on_game_started)
@@ -39,6 +48,17 @@ func _ready():
 	network_manager.player_left_lobby.connect(_on_player_left_lobby)
 	network_manager.walls_received.connect(_on_walls_received)           
 	network_manager.wall_destroyed.connect(_on_wall_destroyed)
+	
+	# Connect powerup signals
+	network_manager.powerup_spawned.connect(_on_powerup_spawned)
+	network_manager.powerup_collected.connect(_on_powerup_collected)
+	network_manager.laser_activated.connect(_on_laser_activated)
+	network_manager.laser_deactivated.connect(_on_laser_deactivated)
+	network_manager.plunger_used.connect(_on_plunger_used)
+	network_manager.mine_placed.connect(_on_mine_placed)
+	network_manager.mine_armed.connect(_on_mine_armed)
+	network_manager.mine_triggered.connect(_on_mine_triggered)
+	network_manager.mine_expired.connect(_on_mine_expired)
 
 	# Connect return button
 	if return_button:
@@ -354,6 +374,32 @@ func _update_local_player_ui(player):
 		kills_label.text = "Kills: " + str(player.kills)
 	if deaths_label:
 		deaths_label.text = "Deaths: " + str(player.deaths)
+	
+	# Update powerup display
+	if powerup_label:
+		var powerup_data = player.get("powerup", {})
+		if powerup_data and powerup_data.get("type"):
+			var powerup_name = _get_powerup_display_name(powerup_data.type)
+			var charges = powerup_data.get("charges", 1)
+			if charges > 1:
+				powerup_label.text = "Powerup: " + powerup_name + " (" + str(charges) + ")"
+			else:
+				powerup_label.text = "Powerup: " + powerup_name + " [E]"
+			powerup_label.visible = true
+		else:
+			powerup_label.text = "No Powerup"
+			powerup_label.visible = false
+
+func _get_powerup_display_name(type: String) -> String:
+	match type:
+		"DIARRHEA_LASER":
+			return "💩 Diarrhea Laser"
+		"PLUNGER_MELEE":
+			return "🪠 Plunger"
+		"DIAPER_MINES":
+			return "💣 Diaper Mines"
+		_:
+			return type
 
 func _on_player_model_state_received(models: Dictionary):
 	player_models = models.duplicate(true)
@@ -455,3 +501,49 @@ func _on_wall_destroyed(wall_id: int):
 			return
 	
 	print("[GameManager] Warning: Wall", wall_id, "not found in scene")
+
+# Powerup handlers
+func _on_powerup_spawned(powerup_data):
+	print("[GameManager] Powerup spawned: ", powerup_data)
+	if powerup_manager:
+		powerup_manager.spawn_powerup(powerup_data)
+
+func _on_powerup_collected(user_id, powerup_id):
+	print("[GameManager] Powerup collected by user ", user_id)
+	if powerup_manager:
+		powerup_manager.remove_powerup(powerup_id)
+
+func _on_laser_activated(user_id, position, rotation, duration):
+	print("[GameManager] Laser activated by user ", user_id)
+	if powerup_manager:
+		powerup_manager.activate_laser(user_id, position, rotation, duration)
+
+func _on_laser_deactivated(user_id):
+	print("[GameManager] Laser deactivated for user ", user_id)
+	if powerup_manager:
+		powerup_manager.deactivate_laser(user_id)
+
+func _on_plunger_used(user_id, position, rotation):
+	print("[GameManager] Plunger used by user ", user_id)
+	if powerup_manager:
+		powerup_manager.show_plunger_effect(user_id, position, rotation)
+
+func _on_mine_placed(mine_data):
+	print("[GameManager] Mine placed: ", mine_data)
+	if powerup_manager:
+		powerup_manager.place_mine(mine_data)
+
+func _on_mine_armed(mine_id):
+	print("[GameManager] Mine armed: ", mine_id)
+	if powerup_manager:
+		powerup_manager.arm_mine(mine_id)
+
+func _on_mine_triggered(mine_id, position, victim_id):
+	print("[GameManager] Mine triggered: ", mine_id)
+	if powerup_manager:
+		powerup_manager.trigger_mine(mine_id, position)
+
+func _on_mine_expired(mine_id):
+	print("[GameManager] Mine expired: ", mine_id)
+	if powerup_manager:
+		powerup_manager.remove_mine(mine_id)

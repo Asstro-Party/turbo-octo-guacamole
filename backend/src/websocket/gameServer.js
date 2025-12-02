@@ -125,6 +125,14 @@ export function setupWebSocketServer(wss) {
             handlePlaySound(ws, message);
             break;
 
+          case 'pickup_powerup':
+            handlePowerupPickup(message, currentLobbyId);
+            break;
+
+          case 'use_powerup':
+            handlePowerupUse(message, currentLobbyId);
+            break;
+
           // =============== VOICE: simple-peer signalling ==================
           case 'joined_voice': {
             const { roomId, userId } = message;
@@ -339,6 +347,50 @@ function handlePlayerTeleported(message, lobbyId) {
   if (!game) return;
 
   game.teleportPlayer(message.userId, message.position);
+}
+
+/**
+ * Handle powerup pickup
+ * @param {Object} message - Pickup message
+ * @param {string} lobbyId - Lobby ID
+ */
+function handlePowerupPickup(message, lobbyId) {
+  if (!lobbyId) return;
+  
+  const lobby = lobbies.get(lobbyId);
+  if (!lobby) return;
+  
+  const game = lobby.getDefaultGame();
+  if (!game) return;
+  
+  const success = game.handlePowerupPickup(message.userId, message.powerupId);
+  
+  if (success) {
+    lobby.broadcast({
+      type: 'powerup_collected',
+      userId: message.userId,
+      powerupId: message.powerupId
+    });
+  }
+}
+
+/**
+ * Handle powerup use
+ * @param {Object} message - Use powerup message
+ * @param {string} lobbyId - Lobby ID
+ */
+function handlePowerupUse(message, lobbyId) {
+  if (!lobbyId) return;
+  
+  const lobby = lobbies.get(lobbyId);
+  if (!lobby) return;
+  
+  const game = lobby.getDefaultGame();
+  if (!game) return;
+  
+  game.handlePowerupUse(message.userId, message.data, (event) => {
+    lobby.broadcast(event);
+  });
 }
 
 /**

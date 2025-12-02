@@ -13,15 +13,23 @@ signal game_started()
 signal game_state_received(state)
 signal kill_received(killer_id, victim_id)
 signal game_ended(results)
-## Remove duplicate signal declarations if present
 signal game_over_received(winner_id, results, host_user_id)
 signal player_model_state_received(player_models)
 signal player_model_selected(user_id, model, player_models)
 signal player_left_lobby(user_id, model)
-signal walls_received(walls)           # ADD THIS
-signal portals_received(portals)       # ADD THIS
-signal portals_removed()               # ADD THIS
+signal walls_received(walls)
 signal wall_destroyed(wall_id)
+
+# Powerup signals
+signal powerup_spawned(powerup_data)
+signal powerup_collected(user_id, powerup_id)
+signal laser_activated(user_id, position, rotation, duration)
+signal laser_deactivated(user_id)
+signal plunger_used(user_id, position, rotation)
+signal mine_placed(mine_data)
+signal mine_armed(mine_id)
+signal mine_triggered(mine_id, position, victim_id)
+signal mine_expired(mine_id)
 
 var lobby_id = ""
 var user_id = 0
@@ -98,23 +106,13 @@ func _handle_message(data: Dictionary):
 	match data.get("type", ""):
 		"joined":
 			print("[NetworkManager] Successfully joined game")
-						# Handle walls and portals from server
+			# Handle walls from server
 			if data.has("walls"):
 				walls_received.emit(data["walls"])
-			if data.has("portals") and data["portals"].size() > 0:
-				portals_received.emit(data["portals"])
 			if data.has("players"):
 				for pid in data["players"]:
 					if int(pid) != user_id:
 						player_joined.emit(int(pid), "Player" + str(pid))
-		
-		"portals_spawned":
-			print("[NetworkManager] Server spawned portals:", data.get("portals"))
-			portals_received.emit(data.get("portals", []))
-		
-		"portals_removed":
-			print("[NetworkManager] Server removed portals")
-			portals_removed.emit()
 
 		"wall_destroyed":  
 			print("[NetworkManager] Server destroyed wall:", data.get("wallId"))
@@ -147,6 +145,39 @@ func _handle_message(data: Dictionary):
 			)
 		"play_sound":
 			_handle_play_sound(data)
+		
+		# Powerup messages
+		"powerup_spawned":
+			powerup_spawned.emit(data.get("powerup"))
+		"powerup_collected":
+			powerup_collected.emit(data.get("userId"), data.get("powerupId"))
+		"laser_activated":
+			laser_activated.emit(
+				data.get("userId"),
+				data.get("position"),
+				data.get("rotation"),
+				data.get("duration")
+			)
+		"laser_deactivated":
+			laser_deactivated.emit(data.get("userId"))
+		"plunger_used":
+			plunger_used.emit(
+				data.get("userId"),
+				data.get("position"),
+				data.get("rotation")
+			)
+		"mine_placed":
+			mine_placed.emit(data.get("mine"))
+		"mine_armed":
+			mine_armed.emit(data.get("mineId"))
+		"mine_triggered":
+			mine_triggered.emit(
+				data.get("mineId"),
+				data.get("position"),
+				data.get("victimId")
+			)
+		"mine_expired":
+			mine_expired.emit(data.get("mineId"))
 			
 
 func _handle_play_sound(data: Dictionary):
