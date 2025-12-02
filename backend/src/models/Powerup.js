@@ -14,11 +14,12 @@ export const PowerupTypes = {
   PLUNGER_MELEE: {
     id: 'PLUNGER_MELEE',
     name: 'Plunger Melee',
-    damage: 75,            // High damage melee hit
+    damage: 100,           // One-shot kill (instant kill)
     range: 80,             // Melee range
     knockback: 200,        // Knockback force
-    cooldown: 1000,        // 1 second between swings
-    duration: 10000        // 10 seconds before powerup expires
+    cooldown: 0,           // No cooldown, single use
+    duration: 10000,       // 10 seconds before powerup expires
+    speedMultiplier: 2.0   // 2x movement speed
   },
   DIAPER_MINES: {
     id: 'DIAPER_MINES',

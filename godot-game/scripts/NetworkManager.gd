@@ -148,7 +148,10 @@ func _handle_message(data: Dictionary):
 		
 		# Powerup messages
 		"powerup_spawned":
-			powerup_spawned.emit(data.get("powerup"))
+			print("[NetworkManager] Received powerup_spawned message: ", data)
+			var powerup = data.get("powerup")
+			print("[NetworkManager] Powerup data: ", powerup)
+			powerup_spawned.emit(powerup)
 		"powerup_collected":
 			powerup_collected.emit(data.get("userId"), data.get("powerupId"))
 		"laser_activated":

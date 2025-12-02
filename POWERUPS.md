@@ -14,14 +14,14 @@ The game now includes 3 unique powerups that spawn randomly on the map every 15 
 - **Usage**: Single-use, activates immediately when pressed
 
 ### 2. Plunger Melee 🪠
-- **Type**: Melee weapon
-- **Damage**: 75 damage per hit
+- **Type**: Melee weapon + Speed boost
+- **Damage**: 100 damage (instant kill!)
 - **Range**: 80 units
 - **Knockback**: 200 units
-- **Duration**: 10 seconds (can use multiple times)
-- **Cooldown**: 1 second between swings
-- **Description**: A powerful melee weapon that deals high damage and knocks back enemies
-- **Usage**: Can be used multiple times within 10 seconds
+- **Duration**: 10 seconds 
+- **Speed Boost**: 2x movement speed for entire duration
+- **Description**: A one-hit-kill melee weapon that also doubles your movement speed
+- **Usage**: Single use attack, but speed boost lasts 10 seconds
 
 ### 3. Diaper Mines 🧷💥
 - **Type**: Trap/Area denial
@@ -38,19 +38,33 @@ The game now includes 3 unique powerups that spawn randomly on the map every 15 
 1. **Pick Up**: Walk over a powerup that spawns on the map (yellow/gold visual)
    - ⚠️ **You can only hold ONE powerup at a time!**
    - If you already have a powerup, you cannot pick up another
+   - Pickup is **automatic** when you walk near a powerup
 2. **Activate**: Press the **E key** to use your powerup
-3. **UI Display**: Your current powerup appears in the UI with "[E]" prompt
+3. **Visual Indicators**: 
+   - **UI Display**: Your current powerup appears in the UI with "[E]" prompt
+   - **Player Color**: Your character changes color based on the powerup you're holding:
+     - 🟢 **Green** = Diarrhea Laser
+     - 🔴 **Red** = Diaper Mines
+     - 🟡 **Yellow** = Plunger Melee
+   - **Color automatically resets to white** when powerup expires or is fully consumed
 4. **Strategic Use**: 
    - Laser: Aim at enemies for maximum damage
    - Plunger: Get close to enemies and swing repeatedly
    - Mines: Place them in chokepoints or near objectives
 
 ## Spawn Locations
-Powerups spawn at one of 4 locations:
-- Top center (640, 100)
-- Bottom center (640, 620)
-- Left center (100, 360)
-- Right center (1180, 360)
+
+### First Powerup:
+- **Always spawns at CENTER** of the map (640, 360) - inside the center box
+- Spawns immediately when game starts
+
+### Subsequent Powerups:
+- Spawn 5 seconds after previous powerup is picked up
+- Spawn randomly at one of 4 locations:
+  - Top center (640, 100)
+  - Bottom center (640, 620)
+  - Left center (100, 360)
+  - Right center (1180, 360)
 
 ## Technical Details
 

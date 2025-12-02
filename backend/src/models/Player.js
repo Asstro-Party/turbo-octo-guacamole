@@ -23,6 +23,7 @@ export class Player {
     this.powerupCharges = 0;       // For multi-use powerups like mines
     this.powerupLastUsed = 0;      // Cooldown tracking
     this.powerupExpires = 0;       // When powerup expires
+    this.speedMultiplier = 1.0;    // Speed boost from powerups
   }
 
   /**
@@ -57,12 +58,15 @@ export class Player {
       }
     }
 
+    // Apply speed multiplier from powerups
+    const effectiveSpeed = this.forwardSpeed * this.speedMultiplier;
+
     return {
       oldX,
       oldY,
       oldRot,
-      newX: this.position.x + Math.cos(this.rotation) * this.forwardSpeed * dt,
-      newY: this.position.y + Math.sin(this.rotation) * this.forwardSpeed * dt
+      newX: this.position.x + Math.cos(this.rotation) * effectiveSpeed * dt,
+      newY: this.position.y + Math.sin(this.rotation) * effectiveSpeed * dt
     };
   }
 
@@ -164,6 +168,11 @@ export class Player {
     if (config) {
       this.powerupCharges = config.charges || 1;
       this.powerupExpires = config.duration ? Date.now() + config.duration : 0;
+      
+      // Apply speed boost if powerup has it
+      if (config.speedMultiplier) {
+        this.speedMultiplier = config.speedMultiplier;
+      }
     }
   }
 
@@ -212,6 +221,24 @@ export class Player {
     this.powerup = null;
     this.powerupCharges = 0;
     this.powerupExpires = 0;
+    this.speedMultiplier = 1.0;  // Reset speed
+  }
+
+  /**
+   * Check and clear expired powerup
+   * @returns {boolean} True if powerup was cleared
+   */
+  checkPowerupExpiration() {
+    if (!this.powerup) return false;
+    
+    // Check if powerup has expired
+    if (this.powerupExpires > 0 && Date.now() > this.powerupExpires) {
+      console.log(`[Player ${this.userId}] Powerup ${this.powerup} expired`);
+      this.clearPowerup();
+      return true;
+    }
+    
+    return false;
   }
 
   /**

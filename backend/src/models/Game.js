@@ -18,8 +18,11 @@ export class Game {
     // Powerup system
     this.powerups = [];              // Active powerups on map
     this.mines = [];                 // Placed diaper mines
-    this.lastPowerupSpawn = Date.now();
-    this.POWERUP_SPAWN_INTERVAL = 15000;  // Spawn every 15 seconds
+    this.gameStartTime = Date.now(); // Track when game started
+    this.lastPowerupPickup = 0;      // Track when last powerup was picked up
+    this.firstPowerupSpawned = false; // Track if first powerup has been spawned
+    this.FIRST_POWERUP_DELAY = 10000;     // 10 seconds after game start
+    this.POWERUP_PICKUP_DELAY = 5000;     // 5 seconds after pickup before next spawn
 
     // Game configuration
     this.GAME_WIDTH = 1280;
@@ -34,6 +37,7 @@ export class Game {
     this.KILLS_TO_WIN = 5;
     
     // Powerup spawn locations
+    this.CENTER_SPAWN = { x: 640, y: 360 };  // Center of map (inside box)
     this.POWERUP_SPAWN_LOCATIONS = [
       { x: 640, y: 100 },   // Top center
       { x: 640, y: 620 },   // Bottom center
@@ -247,6 +251,11 @@ export class Game {
 
       // Track if player state changed
       if (player.hasStateChanged(oldX, oldY, oldRot)) {
+        stateChanged = true;
+      }
+      
+      // Check if player's powerup has expired
+      if (player.checkPowerupExpiration()) {
         stateChanged = true;
       }
     }
@@ -496,12 +505,21 @@ export class Game {
       playersState[userId] = player.getState();
     }
 
+    // Serialize mines without timeout properties
+    const serializedMines = this.mines.map(mine => ({
+      id: mine.id,
+      ownerId: mine.ownerId,
+      position: mine.position,
+      armed: mine.armed,
+      placedAt: mine.placedAt
+    }));
+
     return {
       players: playersState,
       bullets: this.bullets,
       walls: this.walls,
       powerups: this.powerups.map(p => p.getState()),
-      mines: this.mines
+      mines: serializedMines
     };
   }
 
@@ -537,9 +555,25 @@ export class Game {
   updatePowerups(broadcastCallback) {
     const now = Date.now();
     
-    // Spawn new powerup if needed
-    if (this.powerups.length === 0 && now - this.lastPowerupSpawn > this.POWERUP_SPAWN_INTERVAL) {
-      this.spawnRandomPowerup(broadcastCallback);
+    // Only spawn if no powerups exist
+    if (this.powerups.length > 0) {
+      return false;
+    }
+    
+    // First powerup: spawn 10 seconds after game start
+    if (!this.firstPowerupSpawned) {
+      const timeSinceGameStart = now - this.gameStartTime;
+      if (timeSinceGameStart > this.FIRST_POWERUP_DELAY) {
+        this.spawnRandomPowerup(broadcastCallback, true);
+        return true;
+      }
+      return false;
+    }
+    
+    // Subsequent powerups: wait 5 seconds after last pickup
+    const timeSincePickup = now - this.lastPowerupPickup;
+    if (timeSincePickup > this.POWERUP_PICKUP_DELAY) {
+      this.spawnRandomPowerup(broadcastCallback, false);
       return true;
     }
     
@@ -549,19 +583,26 @@ export class Game {
   /**
    * Spawn a random powerup
    * @param {Function} broadcastCallback
+   * @param {boolean} isFirst - Is this the first powerup?
    */
-  spawnRandomPowerup(broadcastCallback) {
+  spawnRandomPowerup(broadcastCallback, isFirst = false) {
     const types = Object.keys(PowerupTypes);
     const randomType = types[Math.floor(Math.random() * types.length)];
-    const randomLocation = this.POWERUP_SPAWN_LOCATIONS[
-      Math.floor(Math.random() * this.POWERUP_SPAWN_LOCATIONS.length)
-    ];
     
-    const powerup = new Powerup(randomType, randomLocation);
+    // First powerup always spawns in center, others spawn randomly
+    const spawnLocation = isFirst 
+      ? this.CENTER_SPAWN
+      : this.POWERUP_SPAWN_LOCATIONS[Math.floor(Math.random() * this.POWERUP_SPAWN_LOCATIONS.length)];
+    
+    const powerup = new Powerup(randomType, spawnLocation);
     this.powerups.push(powerup);
-    this.lastPowerupSpawn = Date.now();
     
-    console.log(`[Game ${this.gameId}] Spawned ${randomType} at (${randomLocation.x}, ${randomLocation.y})`);
+    if (isFirst) {
+      this.firstPowerupSpawned = true;
+      console.log(`[Game ${this.gameId}] Spawned FIRST powerup (${randomType}) at CENTER (${spawnLocation.x}, ${spawnLocation.y})`);
+    } else {
+      console.log(`[Game ${this.gameId}] Spawned ${randomType} at (${spawnLocation.x}, ${spawnLocation.y})`);
+    }
     
     broadcastCallback({
       type: 'powerup_spawned',
@@ -600,6 +641,9 @@ export class Game {
     // Give powerup to player
     player.pickupPowerup(powerup.type);
     this.powerups.splice(powerupIndex, 1);
+    
+    // Track pickup time for spawn delay
+    this.lastPowerupPickup = Date.now();
     
     console.log(`[Game ${this.gameId}] Player ${userId} picked up ${powerup.type}`);
     
@@ -773,11 +817,17 @@ export class Game {
       ownerId: userId,
       position: { ...player.position },
       armed: false,
-      placedAt: Date.now()
+      placedAt: Date.now(),
+      armTimeout: null,
+      expireTimeout: null
     };
     
     // Arm after delay
-    setTimeout(() => {
+    mine.armTimeout = setTimeout(() => {
+      // Check if mine still exists
+      const stillExists = this.mines.some(m => m.id === mine.id);
+      if (!stillExists) return;
+      
       mine.armed = true;
       broadcastCallback({
         type: 'mine_armed',
@@ -786,9 +836,14 @@ export class Game {
     }, config.armTime);
     
     // Remove after lifetime
-    setTimeout(() => {
+    mine.expireTimeout = setTimeout(() => {
       const index = this.mines.findIndex(m => m.id === mine.id);
       if (index !== -1) {
+        const mineToRemove = this.mines[index];
+        // Clear any pending timeouts
+        if (mineToRemove.armTimeout) clearTimeout(mineToRemove.armTimeout);
+        if (mineToRemove.expireTimeout) clearTimeout(mineToRemove.expireTimeout);
+        
         this.mines.splice(index, 1);
         broadcastCallback({
           type: 'mine_expired',
@@ -799,9 +854,16 @@ export class Game {
     
     this.mines.push(mine);
     
+    // Send mine data without timeout properties (can't serialize)
     broadcastCallback({
       type: 'mine_placed',
-      mine
+      mine: {
+        id: mine.id,
+        ownerId: mine.ownerId,
+        position: mine.position,
+        armed: mine.armed,
+        placedAt: mine.placedAt
+      }
     });
   }
 
@@ -816,8 +878,6 @@ export class Game {
       if (!mine.armed) continue;
       
       for (const [targetId, target] of this.players) {
-        if (targetId === mine.ownerId) continue;
-        
         const dx = target.position.x - mine.position.x;
         const dy = target.position.y - mine.position.y;
         const distSq = dx * dx + dy * dy;
@@ -848,6 +908,10 @@ export class Game {
             position: mine.position,
             victimId: targetId
           });
+          
+          // Clear any pending timeouts before removing
+          if (mine.armTimeout) clearTimeout(mine.armTimeout);
+          if (mine.expireTimeout) clearTimeout(mine.expireTimeout);
           
           this.mines.splice(i, 1);
           break;

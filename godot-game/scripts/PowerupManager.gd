@@ -11,13 +11,18 @@ func _ready():
 	players_container = get_node_or_null("/root/Main/GameManager/Players")
 
 func spawn_powerup(powerup_data):
+	print("[PowerupManager] spawn_powerup called with data: ", powerup_data)
+	
 	if powerups.has(powerup_data.id):
+		print("[PowerupManager] Powerup already exists: ", powerup_data.id)
 		return
 	
 	# Create an Area2D for collision detection
 	var powerup = Area2D.new()
 	powerup.position = Vector2(powerup_data.position.x, powerup_data.position.y)
 	powerup.name = "Powerup_" + powerup_data.id
+	
+	print("[PowerupManager] Creating powerup at position: ", powerup.position)
 	powerup.collision_layer = 8  # Powerup layer
 	powerup.collision_mask = 1   # Can detect players
 	
