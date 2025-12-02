@@ -591,9 +591,22 @@ function Game({ user, token }) {
       </div>
 
       <div className="w-full max-w-6xl rounded-3xl border border-white/10 bg-slate-900/25 px-6 py-4 text-center text-xs uppercase tracking-[0.3em] text-slate-300/75 shadow-glass-lg backdrop-blur-2xl">
-        <p>
-          <strong className="font-semibold text-slate-100">Controls:</strong> Q to turn, SPACEBAR or click to shoot
-        </p>
+        <div className="space-y-2">
+          <p>
+            <strong className="font-semibold text-slate-100">Controls:</strong> Q to turn, SPACEBAR or click to shoot, E to use powerups
+          </p>
+          <div className="flex flex-wrap justify-center gap-x-6 gap-y-1 text-[0.65rem]">
+            <span>
+              <strong className="text-green-400">🟢 Laser:</strong> 10s beam (1000 dmg)
+            </span>
+            <span>
+              <strong className="text-yellow-400">🟡 Plunger:</strong> 1-hit melee + 2x speed
+            </span>
+            <span>
+              <strong className="text-red-400">🔴 Mines:</strong> 3 charges (50 dmg each)
+            </span>
+          </div>
+        </div>
       </div>
     </SpaceBackground>
   );
