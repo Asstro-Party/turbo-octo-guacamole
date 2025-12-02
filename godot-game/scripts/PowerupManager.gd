@@ -7,6 +7,13 @@ var players_container = null
 
 signal powerup_collected(powerup_id)
 
+# Preload powerup textures
+var powerup_textures = {
+	"DIARRHEA_LASER": preload("res://assets/powerups/laser.png"),
+	"PLUNGER_MELEE": preload("res://assets/powerups/plunger.png"),
+	"DIAPER_MINES": preload("res://assets/powerups/diaper.png")
+}
+
 func _ready():
 	players_container = get_node_or_null("/root/Main/GameManager/Players")
 
@@ -26,14 +33,31 @@ func spawn_powerup(powerup_data):
 	powerup.collision_layer = 8  # Powerup layer
 	powerup.collision_mask = 1   # Can detect players
 	
-	# Create visual sprite
+	# Create visual sprite with appropriate texture
 	var sprite = Sprite2D.new()
-	var texture = ImageTexture.new()
-	var image = Image.create(32, 32, false, Image.FORMAT_RGBA8)
-	image.fill(Color(1, 0.8, 0, 1))  # Yellow/gold color
-	texture.set_image(image)
-	sprite.texture = texture
-	sprite.scale = Vector2(1.5, 1.5)
+	var powerup_type = powerup_data.type
+	
+	# Use the appropriate texture based on powerup type
+	if powerup_textures.has(powerup_type):
+		sprite.texture = powerup_textures[powerup_type]
+		print("[PowerupManager] Using texture for type: ", powerup_type)
+		
+		# Scale based on actual texture size to target ~48x48 pixels
+		var texture_size = sprite.texture.get_size()
+		var target_size = 64.0  # Increased from 48 for better visibility
+		var scale_factor = target_size / max(texture_size.x, texture_size.y)
+		sprite.scale = Vector2(scale_factor, scale_factor)
+		print("[PowerupManager] Texture size: ", texture_size, " Scale: ", scale_factor)
+	else:
+		# Fallback to procedural texture if type not found
+		print("[PowerupManager] WARNING: No texture for type: ", powerup_type, ", using fallback")
+		var texture = ImageTexture.new()
+		var image = Image.create(32, 32, false, Image.FORMAT_RGBA8)
+		image.fill(Color(1, 0.8, 0, 1))  # Yellow/gold color
+		texture.set_image(image)
+		sprite.texture = texture
+		sprite.scale = Vector2(1.5, 1.5)
+	
 	powerup.add_child(sprite)
 	
 	# Add collision shape for pickup detection
@@ -43,11 +67,13 @@ func spawn_powerup(powerup_data):
 	collision.shape = shape
 	powerup.add_child(collision)
 	
-	# Add pulsing animation
+	# Add pulsing animation (scale up 20% from base)
+	var base_scale = sprite.scale
+	var pulse_scale = base_scale * 1.2
 	var tween = create_tween()
 	tween.set_loops()
-	tween.tween_property(sprite, "scale", Vector2(1.8, 1.8), 0.5)
-	tween.tween_property(sprite, "scale", Vector2(1.5, 1.5), 0.5)
+	tween.tween_property(sprite, "scale", pulse_scale, 0.5)
+	tween.tween_property(sprite, "scale", base_scale, 0.5)
 	
 	# Add metadata
 	powerup.set_meta("powerup_id", powerup_data.id)
@@ -77,12 +103,25 @@ func place_mine(mine_data):
 	mine.position = Vector2(mine_data.position.x, mine_data.position.y)
 	mine.name = "Mine_" + mine_data.id
 	
-	# Set texture (you can replace with actual diaper mine asset)
-	var texture = ImageTexture.new()
-	var image = Image.create(24, 24, false, Image.FORMAT_RGBA8)
-	image.fill(Color(0.6, 0.4, 0.2, 0.8))  # Brown color for diaper
-	texture.set_image(image)
-	mine.texture = texture
+	# Set texture - use diaper texture for mines (slightly smaller than powerup)
+	if powerup_textures.has("DIAPER_MINES"):
+		mine.texture = powerup_textures["DIAPER_MINES"]
+		
+		# Scale to ~54 pixels (slightly smaller than powerup's 64)
+		var texture_size = mine.texture.get_size()
+		var target_size = 54.0  # Bigger than before (was 42)
+		var scale_factor = target_size / max(texture_size.x, texture_size.y)
+		mine.scale = Vector2(scale_factor, scale_factor)
+		print("[PowerupManager] Mine texture size: ", texture_size, " Scale: ", scale_factor)
+	else:
+		# Fallback to procedural texture
+		var texture = ImageTexture.new()
+		var image = Image.create(24, 24, false, Image.FORMAT_RGBA8)
+		image.fill(Color(0.6, 0.4, 0.2, 0.8))  # Brown color for diaper
+		texture.set_image(image)
+		mine.texture = texture
+		mine.scale = Vector2(1.0, 1.0)  # 24x24 pixels
+	
 	mine.modulate = Color(1, 1, 1, 0.5)  # Semi-transparent when not armed
 	
 	mine.set_meta("mine_id", mine_data.id)
@@ -162,19 +201,32 @@ func show_plunger_effect(user_id, position, rotation):
 	plunger.position = Vector2(position.x, position.y)
 	plunger.rotation = rotation
 	
-	# Create simple plunger visual
-	var texture = ImageTexture.new()
-	var image = Image.create(40, 40, false, Image.FORMAT_RGBA8)
-	image.fill(Color(1, 0, 0, 1))  # Red plunger
-	texture.set_image(image)
-	plunger.texture = texture
+	# Use actual plunger texture
+	if powerup_textures.has("PLUNGER_MELEE"):
+		plunger.texture = powerup_textures["PLUNGER_MELEE"]
+		
+		# Scale plunger to ~80 pixels for melee attack visibility
+		var texture_size = plunger.texture.get_size()
+		var target_size = 80.0  # Bigger than powerup for impact
+		var scale_factor = target_size / max(texture_size.x, texture_size.y)
+		plunger.scale = Vector2(scale_factor, scale_factor)
+	else:
+		# Fallback to procedural texture
+		var texture = ImageTexture.new()
+		var image = Image.create(40, 40, false, Image.FORMAT_RGBA8)
+		image.fill(Color(1, 0, 0, 1))  # Red plunger
+		texture.set_image(image)
+		plunger.texture = texture
 	
 	if players_container:
 		players_container.add_child(plunger)
 	
-	# Animate swing
+	# Animate swing with scale punch effect
 	var tween = create_tween()
+	tween.set_parallel(true)
 	tween.tween_property(plunger, "rotation", rotation + PI / 2, 0.2)
+	tween.tween_property(plunger, "scale", plunger.scale * 1.3, 0.1).set_trans(Tween.TRANS_BACK)
+	tween.chain().tween_property(plunger, "scale", plunger.scale * 0.8, 0.1)
 	tween.tween_callback(plunger.queue_free)
 
 func create_explosion_effect(pos: Vector2) -> CPUParticles2D:

@@ -5,7 +5,7 @@ export const PowerupTypes = {
   DIARRHEA_LASER: {
     id: 'DIARRHEA_LASER',
     name: 'Diarrhea Laser',
-    duration: 5000,        // 5 seconds of laser beam
+    duration: 10000,       // 10 seconds of laser beam
     damage: 10,            // Damage per tick
     range: 400,            // Laser range
     tickRate: 100,         // Damage every 100ms

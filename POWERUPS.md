@@ -7,9 +7,10 @@ The game now includes 3 unique powerups that spawn randomly on the map every 15 
 
 ### 1. Diarrhea Laser 💩⚡
 - **Type**: Offensive weapon
-- **Duration**: 5 seconds
+- **Duration**: 10 seconds
 - **Range**: 400 units
 - **Damage**: 10 damage per tick (every 100ms)
+- **Total Damage**: Up to 1000 damage if all ticks hit
 - **Description**: Fires a continuous brown/orange laser beam that damages all enemies in its path
 - **Usage**: Single-use, activates immediately when pressed
 
@@ -20,6 +21,7 @@ The game now includes 3 unique powerups that spawn randomly on the map every 15 
 - **Knockback**: 200 units
 - **Duration**: 10 seconds 
 - **Speed Boost**: 2x movement speed for entire duration
+- **Visual Effect**: Plunger sprite swings in attack direction with punch animation (60px)
 - **Description**: A one-hit-kill melee weapon that also doubles your movement speed
 - **Usage**: Single use attack, but speed boost lasts 10 seconds
 
@@ -42,6 +44,9 @@ The game now includes 3 unique powerups that spawn randomly on the map every 15 
 2. **Activate**: Press the **E key** to use your powerup
 3. **Visual Indicators**: 
    - **UI Display**: Your current powerup appears in the UI with "[E]" prompt
+   - **Powerup Icons**: Custom PNG sprites for each powerup type (scaled to ~64x64 pixels)
+   - **Mine Icons**: Diaper sprite for placed mines (scaled to ~54x54 pixels)
+   - **Attack Effects**: Plunger sprite appears and swings when using melee attack (80px)
    - **Player Color**: Your character changes color based on the powerup you're holding:
      - 🟢 **Green** = Diarrhea Laser
      - 🔴 **Red** = Diaper Mines
