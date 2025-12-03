@@ -1,6 +1,6 @@
 # Astro Party - Multiplayer Web Game
 
-A real-time multiplayer space shooter game where 4 players battle in an arena. Built with **Godot 4**, **Node.js**, **React**, **PostgreSQL**, and **Redis**.
+A real-time multiplayer space shooter game where 4 players battle in an arena. Built with **Godot 4**, **Node.js**, **React**, **PostgreSQL**, and **Redis**. Play the game at: https://asstro-party.vercel.app.
 
 ## Features
 
@@ -118,7 +118,40 @@ npm run test:load:report
 
 **Cost:** 100% FREE using Vercel (frontend) + Railway (backend + databases)
 
-**Continuous Deployment** - Both Vercel and Railway will detect changes in the `main` branch of the repository and handle deployment automatically!
+**Continuous Integration (CI):**
+This project uses **GitHub Actions** for continuous integration. Every push to `main` and every pull request triggers the CI workflow, which automatically checks code quality and build health.
+
+**What the CI does:**
+
+- **Backend Lint & Test:**
+       - Installs dependencies for the backend
+       - Runs ESLint static analysis (using the new flat config)
+       - Runs backend unit tests (Vitest)
+       - Generates code coverage reports
+       - Uses PostgreSQL and Redis services for integration
+
+- **Frontend Lint & Build:**
+       - Installs dependencies for the frontend
+       - Runs ESLint static analysis (React, hooks, etc.)
+       - Builds the frontend with Vite
+       - Reports build size
+
+- **Security Scan:**
+       - Runs `npm audit` on both backend and frontend to check for vulnerable dependencies
+
+- **Docker Build Test:**
+       - Builds backend and frontend Docker images
+       - Validates the `docker-compose.yml` configuration
+
+- **CI Success:**
+       - Runs only if all previous jobs succeed
+       - Prints a summary of successful checks
+
+You can view the status of each workflow run in the **Actions** tab on GitHub. Each job will show a green check (✅) if it passes, or a red X (❌) if it fails. Click on any job for detailed logs.
+
+To test the CI, simply push a commit or open a pull request. The workflow will run automatically.
+
+**Continuous Deployment (CD):** Both Vercel and Railway will detect changes in the `main` branch of the repository and handle deployment automatically!
 
 ### Deployment Architecture
 
