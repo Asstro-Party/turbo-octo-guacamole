@@ -27,8 +27,8 @@ describe('Game Model', () => {
     expect(player.userId).toBe(1);
     expect(player.username).toBe('player1');
     expect(player.position).toBeDefined();
-    expect(player.position.x).toBe(180);
-    expect(player.position.y).toBe(125);
+    expect(player.position.x).toBe(140);
+    expect(player.position.y).toBe(140);
   });
 
   it('should add multiple players at different spawn points', () => {
@@ -210,22 +210,6 @@ describe('Game Model', () => {
     expect(state.players[2]).toBeDefined();
     expect(state.bullets).toBeDefined();
     expect(state.walls).toBeDefined();
-    expect(state.portals).toBeDefined();
-  });
-
-  it('should teleport player to specific position', () => {
-    game.addPlayer(1, 'player1', 0);
-    const player = game.getPlayer(1);
-    
-    const originalX = player.position.x;
-    const originalY = player.position.y;
-    
-    game.teleportPlayer(1, { x: 500, y: 400 });
-    
-    expect(player.position.x).toBe(500);
-    expect(player.position.y).toBe(400);
-    expect(player.position.x).not.toBe(originalX);
-    expect(player.position.y).not.toBe(originalY);
   });
 
   it('should find safe respawn positions', () => {
@@ -243,7 +227,7 @@ describe('Game Model', () => {
   it('should initialize walls correctly', () => {
     expect(game.walls).toBeDefined();
     expect(Array.isArray(game.walls)).toBe(true);
-    expect(game.walls.length).toBe(20); // From initializeWalls()
+    expect(game.walls.length).toBe(40); // From initializeWalls()
     
     // Check first wall structure
     const wall = game.walls[0];

@@ -27,7 +27,7 @@ const TICK_RATE = 50; // ~20 times per second (20 FPS)
 
 // Connection timeout management
 const VOICE_TIMEOUT_MS = 300000; // 5 minutes of inactivity
-const cleanupInterval = setInterval(() => {
+setInterval(() => {
   for (const lobby of lobbies.values()) {
     lobby.cleanupStaleVoice(VOICE_TIMEOUT_MS);
   }
@@ -239,7 +239,7 @@ export function setupWebSocketServer(wss) {
  * @param {Object} message - Join game message
  * @param {WebSocketServer} wss - WebSocket server
  */
-async function handleJoinGame(ws, message, wss) {
+async function handleJoinGame(ws, message, _wss) {
   const { lobbyId, userId, username } = message;
 
   console.log(`[WebRTC] handleJoinGame - User ${userId} joining lobby ${lobbyId}`);
@@ -440,6 +440,7 @@ async function handleKill(message, lobbyId) {
         const dist2 = dx * dx + dy * dy;
         return dist2 <= (MAX_HIT_DISTANCE * MAX_HIT_DISTANCE);
       } catch (e) {
+        console.error('Error in handleKill bullet matching:', e);
         return false;
       }
     });
@@ -879,7 +880,7 @@ setInterval(() => {
       continue;
     }
 
-    for (const [gameId, game] of lobby.games) {
+    for (const [_gameId, game] of lobby.games) {
       // Broadcast callback for game events
       const broadcastCallback = (message) => {
         lobby.broadcast(message);
