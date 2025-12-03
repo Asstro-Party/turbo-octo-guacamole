@@ -2,7 +2,7 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
-import { setSession } from '../config/redis.js';
+import { setSession, deleteSession } from '../config/redis.js';
 
 const router = express.Router();
 

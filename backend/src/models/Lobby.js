@@ -115,7 +115,7 @@ export class Lobby {
       }
     });
 
-    // console.log(`[Lobby ${this.lobbyId}] Sent ${message.type} to ${sentCount} client(s)`);
+    console.log(`[Lobby ${this.lobbyId}] Sent ${message.type} to ${sentCount} client(s)`);
   }
 
   /**

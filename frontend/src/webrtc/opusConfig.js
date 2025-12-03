@@ -134,7 +134,7 @@ export function attachRemoteAudio(remoteStream, peerId, peerAudioRef, remoteAudi
 
         // Try to set low latency hint (Chrome/Edge)
         if ('setSinkId' in el) {
-            el.setSinkId('default').catch(e => console.log('[Audio] setSinkId not supported'));
+            el.setSinkId('default').catch(() => console.log('[Audio] setSinkId not supported'));
         }
 
         peerAudioRef.current[peerId] = el;
