@@ -33,10 +33,10 @@ docker-compose up --build
 ```
 
 **What Docker runs:**
-- ✅ PostgreSQL database (with auto-initialization)
-- ✅ Redis cache
-- ✅ Backend server (waits for database to be ready)
-- ✅ Frontend (production build served by Nginx)
+- PostgreSQL database (with auto-initialization)
+- Redis cache
+- Backend server (waits for database to be ready)
+- Frontend (production build served by Nginx)
 
 **Manage containers:**
 ```bash
@@ -183,14 +183,7 @@ turbo-octo-guacamole/
 3. Export to Web (Project → Export)
 4. Copy to `frontend/public/godot-game/`
 
-## Deployment
-
-Ready to deploy your game to production? We've got you covered!
-
-### 📦 Deployment Guides
-
-- **[Quick Start Guide](DEPLOYMENT-QUICK-START.md)** - 5-minute deployment (Vercel + Railway)
-- **[Full Deployment Guide](DEPLOYMENT.md)** - Complete step-by-step instructions
+### Deployment Guides
 
 **Cost:** 100% FREE using Vercel (frontend) + Railway (backend + databases)
 
