@@ -121,8 +121,13 @@ npm run test:load:report
 3. Export to Web (Project → Export)
 4. Copy to `frontend/public/godot-game/`
 
+## CICD
 
-## Deployment Architecture
+**Cost:** 100% FREE using Vercel (frontend) + Railway (backend + databases)
+
+**Continuous Deployment** - Both Vercel and Railway will detect changes in the `main` branch of the repository and handle deployment automatically!
+
+### Deployment Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
