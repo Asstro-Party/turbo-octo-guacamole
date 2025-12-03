@@ -204,9 +204,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Install Docker Compose CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose-plugin
+
       - name: Test docker-compose configuration
         run: |
-          docker-compose config
+          docker compose config
           echo "Docker Compose configuration is valid"
 
   ci-success:
