@@ -33,10 +33,10 @@ docker-compose up --build
 ```
 
 **What Docker runs:**
-- ✅ PostgreSQL database (with auto-initialization)
-- ✅ Redis cache
-- ✅ Backend server (waits for database to be ready)
-- ✅ Frontend (production build served by Nginx)
+- PostgreSQL database (with auto-initialization)
+- Redis cache
+- Backend server (waits for database to be ready)
+- Frontend (production build served by Nginx)
 
 **Manage containers:**
 ```bash
@@ -78,44 +78,26 @@ npm run dev
 
 Open http://localhost:5173 to play!
 
-### First Time Setup (Development Mode Only)
+## Running Tests
 
-If running in development mode for the first time:
+```bash
+cd backend
 
-1. **Install dependencies:**
-   ```bash
-   cd backend && npm install
-   cd ../frontend && npm install
-   ```
+# Unit tests
+npm run test:unit
 
-2. **Configure environment:**
-   ```bash
-   cd backend
-   cp .env.example .env
-   # Edit .env if needed (default values work for local development)
-   ```
+# Load tests
+npm run test:load
 
-3. **Start databases:**
-   ```bash
-   docker-compose up postgres redis -d
-   ```
-
-4. **Running tests:**
-   ```bash
-   cd backend
-   # Unit tests
-   npm run test:unit
-   # Load tests
-   npm run test:load
-   # Load tests (with report)
-   npm run test:load:report
-   ```
+# Load tests (with report)
+npm run test:load:report
+```
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|-----------|
-| Game Engine | Godot 4.2 (WebAssembly/HTML5) |
+| Game Engine | Godot 4.5 (WebAssembly/HTML5) |
 | Backend | Node.js + Express |
 | Real-time Networking | WebSockets (ws library) |
 | Frontend | React + Vite |
@@ -124,78 +106,50 @@ If running in development mode for the first time:
 | Voice Chat | WebRTC (P2P) |
 | Authentication | JWT + bcrypt |
 
-## Architecture
-
-```
-Frontend (React)
-  ├── Auth Pages (Login/Signup)
-  ├── Lobby Browser (Server list)
-  ├── Profile Page (Stats)
-  └── Game Page (Godot iframe + Voice chat)
-
-Backend (Node.js)
-  ├── REST API (Auth, Lobby, Profile)
-  ├── WebSocket Server (Game networking)
-  ├── PostgreSQL (Users, Stats, Games)
-  └── Redis (Active lobbies, Sessions)
-
-Game (Godot 4)
-  ├── Player movement & shooting
-  ├── WebSocket client
-  └── Multiplayer synchronization
-```
 
 ## Game Controls
 
-- **WASD** - Move ship
-- **Mouse** - Aim
-- **Left Click** - Shoot
+- **Q** - Rotate ship
+- **Space** / **Left Click** - Shoot
+- **E** - Use Powerup
 - **Microphone Button** - Toggle voice chat
 
-## Project Structure
-
-```
-turbo-octo-guacamole/
-├── backend/              # Node.js server
-│   ├── src/
-│   │   ├── routes/       # REST API routes
-│   │   ├── websocket/    # WebSocket game server
-│   │   ├── config/       # Database connections
-│   │   └── middleware/   # Authentication
-│   └── db/               # Database schema
-├── frontend/             # React web app
-│   ├── src/
-│   │   ├── pages/        # Auth, Lobby, Game, Profile
-│   │   ├── components/   # React components
-│   │   └── services/     # API client
-│   └── public/
-│       └── godot-game/   # Exported Godot build
-├── godot-game/           # Godot 4 project
-│   ├── scenes/           # Game scenes
-│   ├── scripts/          # GDScript files
-│   └── export/           # HTML5 export output
-└── docker-compose.yml    # PostgreSQL + Redis
-```
 
 ### Godot
-1. Open `godot-game/project.godot` in Godot 4.2+
+1. Open `godot-game/project.godot` in Godot 4.5
 2. Make changes
 3. Export to Web (Project → Export)
 4. Copy to `frontend/public/godot-game/`
 
-## Deployment
 
-Ready to deploy your game to production? We've got you covered!
+## Deployment Architecture
 
-### 📦 Deployment Guides
-
-- **[Quick Start Guide](DEPLOYMENT-QUICK-START.md)** - 5-minute deployment (Vercel + Railway)
-- **[Full Deployment Guide](DEPLOYMENT.md)** - Complete step-by-step instructions
-
-**Cost:** 100% FREE using Vercel (frontend) + Railway (backend + databases)
-
-**No Docker required** - Both platforms handle deployment automatically!
-
+```
+┌─────────────────────────────────────────────────────┐
+│                  Cloudflare CDN                     │
+│            (DNS, DDoS protection, Cache)            │
+└───────────────────────┬─────────────────────────────┘
+                        │
+           ┌────────────┴───────────┐
+           │                        │
+    ┌──────▼──────┐         ┌──────▼──────┐
+    │   Vercel    │         │   Railway   │
+    │  (Frontend) │         │  (Backend)  │
+    │             │         │             │
+    │  - React    │         │  - Node.js  │
+    │  - Godot    │         │  - Express  │
+    │    HTML5    │         │  - WS       │
+    └─────────────┘         └──────┬──────┘
+                                   │
+                        ┌──────────┴──────────┐
+                        │                     │
+                 ┌──────▼──────┐      ┌──────▼──────┐
+                 │ Managed     │      │  Managed    │
+                 │ PostgreSQL  │      │  Redis      │
+                 │ (AWS RDS)   │      │ (Redis      │
+                 │             │      │  Cloud)     │
+                 └─────────────┘      └─────────────┘
+```
 ---
 
 ## Configuration Notes
