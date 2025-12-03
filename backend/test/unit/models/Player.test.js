@@ -130,6 +130,6 @@ describe('Player Model - Updated API', () => {
     expect(positions[0]).toEqual({ x: 140, y: 140 });
     expect(positions[1]).toEqual({ x: 1140, y: 140 });
     expect(positions[2]).toEqual({ x: 1140, y: 580 });
-    expect(positions[3]).toEqual({ x: 140, y: 5800 });
+    expect(positions[3]).toEqual({ x: 140, y: 580 });
   });
 });
