@@ -12,11 +12,20 @@ A real-time multiplayer space shooter game where 4 players battle in an arena. B
 - **Multi-Session Support** - Multiple concurrent games
 - **Web-Based** - Play directly in your browser
 
-## Quick Start
+## Tech Stack
 
-### Option 1: Docker (Recommended - Production-like Setup)
+| Component | Technology |
+|-----------|-----------|
+| Game Engine | Godot 4.5 (WebAssembly/HTML5) |
+| Backend | Node.js + Express |
+| Real-time Networking | WebSockets (ws library) |
+| Frontend | React + Vite |
+| Database | PostgreSQL |
+| Session Store | Redis |
+| Voice Chat | WebRTC (P2P) |
+| Authentication | JWT + bcrypt |
 
-Run the entire application with one command:
+## Quick Start with Docker Compose
 
 ```bash
 # 1. Create environment file
@@ -32,7 +41,7 @@ docker-compose up --build
 # WebSocket: ws://localhost:3001
 ```
 
-**What Docker runs:**
+**What Docker Compose runs:**
 - PostgreSQL database (with auto-initialization)
 - Redis cache
 - Backend server (waits for database to be ready)
@@ -50,7 +59,7 @@ docker-compose down
 docker-compose down -v
 ```
 
-### Option 2: Development Mode (Local Development)
+## Local Development
 
 For active development with hot reload:
 
@@ -67,11 +76,16 @@ cd backend
 cp .env.example .env
 # Edit .env if needed (default values work for local development)
 
-# 4. Start backend (in one terminal)
+# 4. Configure backend environment
+cd frontend
+cp .env.example .env
+# Edit .env if needed (default values work for local development)
+
+# 5. Start backend (in one terminal)
 cd backend
 npm run dev
 
-# 5. Start frontend (in another terminal)
+# 6. Start frontend (in another terminal)
 cd frontend
 npm run dev
 ```
@@ -93,33 +107,12 @@ npm run test:load
 npm run test:load:report
 ```
 
-## Tech Stack
-
-| Component | Technology |
-|-----------|-----------|
-| Game Engine | Godot 4.5 (WebAssembly/HTML5) |
-| Backend | Node.js + Express |
-| Real-time Networking | WebSockets (ws library) |
-| Frontend | React + Vite |
-| Database | PostgreSQL |
-| Session Store | Redis |
-| Voice Chat | WebRTC (P2P) |
-| Authentication | JWT + bcrypt |
-
-
-## Game Controls
-
-- **Q** - Rotate ship
-- **Space** / **Left Click** - Shoot
-- **E** - Use Powerup
-- **Microphone Button** - Toggle voice chat
-
-
 ### Godot
 1. Open `godot-game/project.godot` in Godot 4.5
 2. Make changes
 3. Export to Web (Project → Export)
 4. Copy to `frontend/public/godot-game/`
+
 
 ## CICD
 
