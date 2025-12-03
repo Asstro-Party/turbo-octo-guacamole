@@ -5,11 +5,11 @@ services:
     image: postgres:15-alpine
     container_name: game_postgres
     environment:
-      POSTGRES_DB: astro_party
-      POSTGRES_USER: gameuser
-      POSTGRES_PASSWORD: gamepass
+      POSTGRES_DB: ${DB_NAME:-astro_party}
+      POSTGRES_USER: ${DB_USER:-gameuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-gamepass}
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -43,15 +43,15 @@ services:
     container_name: game_backend
     environment:
       NODE_ENV: production
-      PORT: 3000
-      WS_PORT: 3001
-      DB_HOST: postgres
-      DB_PORT: 5432
+      PORT: ${PORT:-3000}
+      WS_PORT: ${WS_PORT:-3001}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
       DB_NAME: ${DB_NAME:-astro_party}
       DB_USER: ${DB_USER:-gameuser}
       DB_PASSWORD: ${DB_PASSWORD:-gamepass}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
       JWT_EXPIRES_IN: 7d
       CORS_ORIGIN: http://localhost:3000,http://localhost:5173,http://localhost
@@ -78,8 +78,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: http://localhost:3000/api
-        VITE_WS_URL: ws://localhost:3001
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000/api}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:3001}
     container_name: game_frontend
     ports:
       - "5173:80"
