@@ -204,10 +204,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Install Docker Compose CLI
+      - name: Install Docker Compose V2
         run: |
-          sudo apt-get update
-          sudo apt-get install -y docker-compose-plugin
+          sudo mkdir -p /usr/local/lib/docker/cli-plugins
+          sudo curl -SL https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+          sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          docker compose version
 
       - name: Test docker-compose configuration
         run: |
