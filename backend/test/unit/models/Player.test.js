@@ -127,9 +127,9 @@ describe('Player Model - Updated API', () => {
     const positions = Player.getSpawnPositions();
     
     expect(positions).toHaveLength(4);
-    expect(positions[0]).toEqual({ x: 180, y: 125 });
-    expect(positions[1]).toEqual({ x: 1160, y: 125 });
-    expect(positions[2]).toEqual({ x: 1160, y: 625 });
-    expect(positions[3]).toEqual({ x: 180, y: 625 });
+    expect(positions[0]).toEqual({ x: 140, y: 140 });
+    expect(positions[1]).toEqual({ x: 1140, y: 140 });
+    expect(positions[2]).toEqual({ x: 1140, y: 580 });
+    expect(positions[3]).toEqual({ x: 140, y: 580 });
   });
 });
