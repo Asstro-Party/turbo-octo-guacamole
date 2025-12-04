@@ -24,6 +24,9 @@ const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
   : ['http://localhost:5173'];
 
+// Debug: Log allowed origins on startup
+console.log('🌐 Allowed CORS origins:', allowedOrigins);
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -32,12 +35,16 @@ app.use(cors({
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
+      console.warn(`⚠️ CORS blocked origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Authorization'],
+  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 }));
-app.use(express.json());
 
 // Health check
 app.get('/health', (req, res) => {
@@ -52,6 +59,13 @@ app.use('/api/admin', adminRoutes);
 
 // Error handling middleware
 app.use((err, req, res, _next) => {
+  // Don't override CORS headers if CORS middleware already set them
+  if (err.message === 'Not allowed by CORS') {
+    return res.status(403).json({
+      error: 'Not allowed by CORS'
+    });
+  }
+  
   console.error('Error:', err);
   res.status(err.status || 500).json({
     error: err.message || 'Internal server error'
