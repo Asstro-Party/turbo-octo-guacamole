@@ -71,19 +71,14 @@ async function startServer() {
     // Create HTTP server with Express app
     const httpServer = createServer(app);
 
-    // Start HTTP server
-    httpServer.listen(PORT, () => {
-      console.log(`🚀 HTTP Server running on port ${PORT}`);
-    });
-
-    // Create separate WebSocket server on different port
-    const wsServer = createServer();
-    const wss = new WebSocketServer({ server: wsServer });
+    // Attach WebSocket server to the same HTTP server
+    const wss = new WebSocketServer({ server: httpServer });
     setupWebSocketServer(wss);
 
-    // Start WebSocket server on separate port
-    wsServer.listen(WS_PORT, () => {
-      console.log(`🎮 WebSocket Server running on port ${WS_PORT}`);
+    // Start HTTP server (WebSocket will use the same port)
+    httpServer.listen(PORT, () => {
+      console.log(`🚀 HTTP Server running on port ${PORT}`);
+      console.log(`🎮 WebSocket Server running on port ${PORT}`);
     });
 
   } catch (error) {
