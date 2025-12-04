@@ -140,7 +140,7 @@ This project uses **GitHub Actions** for continuous integration. Every push to `
 
 **Continuous Deployment (CD):** Both Vercel and Railway will detect changes in the `main` branch of the repository and handle deployment automatically!
 
-### Proposed Deployment Architecture
+### Deployment Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
