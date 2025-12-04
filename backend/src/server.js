@@ -31,22 +31,32 @@ console.log('🌐 Allowed CORS origins:', allowedOrigins);
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   
+  // Log ALL incoming requests for debugging
+  console.log(`📥 ${req.method} ${req.path} from origin: ${origin || 'none'}`);
+  
+  // Set CORS headers for allowed origins
   if (origin && allowedOrigins.indexOf(origin) !== -1) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     res.setHeader('Access-Control-Expose-Headers', 'Authorization');
+    console.log(`✅ CORS headers set for origin: ${origin}`);
+  } else if (origin) {
+    console.log(`❌ Origin not allowed: ${origin}`);
   }
   
-  // Handle preflight requests
+  // Handle preflight requests immediately
   if (req.method === 'OPTIONS') {
+    console.log(`✅ Preflight handled for ${req.path}`);
     return res.status(200).end();
   }
   
   next();
 });
 
+// Parse JSON bodies - THIS WAS MISSING!
+app.use(express.json());
 
 // Health check
 app.get('/health', (req, res) => {
