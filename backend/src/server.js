@@ -47,8 +47,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Explicitly handle OPTIONS requests (preflight)
-app.options('*', cors(corsOptions));
 
 // Health check
 app.get('/health', (req, res) => {
