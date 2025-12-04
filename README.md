@@ -4,11 +4,11 @@ A real-time multiplayer space shooter game where 4 players battle in an arena. B
 
 ## Features
 
+- **Web-Based** - Play directly in your browser
 - **Multiplayer Gameplay** - 4 players battle in real-time
+- **Multi-Session Support** - Multiple concurrent games
 - **Voice Chat** - In-game voice communication via WebRTC
 - **User Authentication** - Signup/Login system
-- **Multi-Session Support** - Multiple concurrent games
-- **Web-Based** - Play directly in your browser
 
 ## Tech Stack
 
@@ -114,25 +114,22 @@ npm run test:load:report
 
 ## CICD
 
-**Cost:** 100% FREE using Vercel (frontend) + Railway (backend + databases)
+**Cost:** 100% FREE when using Vercel (frontend) + Railway (backend + databases)
 
 **Continuous Integration (CI):**
-This project uses **GitHub Actions** for continuous integration. Every push to `main` and every pull request triggers the CI workflow, which automatically checks code quality and build health.
-
-**What the CI does:**
+This project uses **GitHub Actions** for continuous integration. Every push to `main` and every pull request triggers the CI workflow which performs:
 
 - **Backend Lint & Test:**
-       - Installs dependencies for the backend
-       - Runs ESLint static analysis (using the new flat config)
+       - Installs dependencies
+       - Runs ESLint static analysis
        - Runs backend unit tests (Vitest)
        - Generates code coverage reports
        - Uses PostgreSQL and Redis services for integration
 
 - **Frontend Lint & Build:**
        - Installs dependencies for the frontend
-       - Runs ESLint static analysis (React, hooks, etc.)
-       - Builds the frontend with Vite
-       - Reports build size
+       - Runs ESLint static analysis
+       - Builds the frontend with Vite and Reports build size
 
 - **Security Scan:**
        - Runs `npm audit` on both backend and frontend to check for vulnerable dependencies
@@ -141,17 +138,9 @@ This project uses **GitHub Actions** for continuous integration. Every push to `
        - Builds backend and frontend Docker images
        - Validates the `docker-compose.yml` configuration
 
-- **CI Success:**
-       - Runs only if all previous jobs succeed
-       - Prints a summary of successful checks
-
-You can view the status of each workflow run in the **Actions** tab on GitHub. Each job will show a green check (✅) if it passes, or a red X (❌) if it fails. Click on any job for detailed logs.
-
-To test the CI, simply push a commit or open a pull request. The workflow will run automatically.
-
 **Continuous Deployment (CD):** Both Vercel and Railway will detect changes in the `main` branch of the repository and handle deployment automatically!
 
-### Deployment Architecture
+### Proposed Deployment Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
