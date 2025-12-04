@@ -5,10 +5,8 @@ A real-time multiplayer space shooter game where 4 players battle in an arena. B
 ## Features
 
 - **Multiplayer Gameplay** - 4 players battle in real-time
-- **Server Browser** - Browse and join available lobbies
 - **Voice Chat** - In-game voice communication via WebRTC
 - **User Authentication** - Signup/Login system
-- **Player Profiles** - Track kills, deaths, K/D ratio, wins
 - **Multi-Session Support** - Multiple concurrent games
 - **Web-Based** - Play directly in your browser
 
